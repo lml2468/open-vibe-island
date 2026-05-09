@@ -555,6 +555,7 @@ struct IslandPanelView: View {
                         ? { model.replyToSession(session, text: $0) } : nil,
                     onJump: { model.jumpToSession(session) }
                 )
+                .id(notificationCardIdentity(for: session))
 
                 if model.allSessions.count > 1 {
                     Button {
@@ -604,6 +605,19 @@ struct IslandPanelView: View {
             if !isNotificationMode {
                 sessionPanelFooter
             }
+        }
+    }
+
+    private func notificationCardIdentity(for session: AgentSession) -> String {
+        switch session.phase {
+        case .waitingForApproval:
+            return "\(session.id)|approval|\(session.permissionRequest?.id.uuidString ?? "none")"
+        case .waitingForAnswer:
+            return "\(session.id)|question|\(session.questionPrompt?.id.uuidString ?? "none")"
+        case .completed:
+            return "\(session.id)|completed|\(session.updatedAt.timeIntervalSinceReferenceDate)"
+        case .running:
+            return "\(session.id)|running"
         }
     }
 
