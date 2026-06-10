@@ -80,6 +80,11 @@ public final class BridgeCommandClient: @unchecked Sendable {
             }
 
             if bytesRead == 0 {
+                // Clean disconnect before a `.response` frame arrived. Returning
+                // nil means "no directive" — callers treat this as fail-open
+                // (the agent runs unchanged), per the hooks fail-open contract.
+                // This is intentional: a downed/closed bridge must never block
+                // the agent.
                 return nil
             }
 

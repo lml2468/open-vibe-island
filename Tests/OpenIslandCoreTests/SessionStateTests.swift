@@ -1357,6 +1357,112 @@ struct SessionStateTests {
         let legacyUpdated = ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z")
         #expect(legacy.session.firstSeenAt == legacyUpdated)
     }
+
+    // MARK: - Regression: out-of-order events must not resurrect ended sessions
+
+    @Test
+    func lateActivityUpdatedDoesNotResurrectEndedSession() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        var state = SessionState()
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "s1",
+                    title: "T",
+                    tool: .claudeCode,
+                    origin: .live,
+                    summary: "x",
+                    timestamp: t0
+                )
+            )
+        )
+
+        state.apply(
+            .sessionCompleted(
+                SessionCompleted(
+                    sessionID: "s1",
+                    summary: "done",
+                    timestamp: t0.addingTimeInterval(5),
+                    isSessionEnd: true
+                )
+            )
+        )
+
+        #expect(state.session(id: "s1")?.phase == .completed)
+        #expect(state.session(id: "s1")?.isSessionEnded == true)
+
+        // A late, out-of-order activity event (timestamp earlier than the
+        // completion) must not flip the ended session back to running.
+        state.apply(
+            .activityUpdated(
+                SessionActivityUpdated(
+                    sessionID: "s1",
+                    summary: "late",
+                    phase: .running,
+                    timestamp: t0.addingTimeInterval(3)
+                )
+            )
+        )
+
+        #expect(state.session(id: "s1")?.phase == .completed)
+        #expect(state.runningCount == 0)
+        // The core hazard is a session counted as running yet invisible in the
+        // island; assert it stays invisible (hook-managed + ended).
+        #expect(state.session(id: "s1")?.isVisibleInIsland == false)
+        #expect(state.liveRunningCount == 0)
+    }
+
+    @Test
+    func resolvePermissionDoesNotResurrectEndedSession() {
+        let t0 = Date(timeIntervalSince1970: 2_000)
+        var state = SessionState()
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "s1",
+                    title: "T",
+                    tool: .claudeCode,
+                    origin: .live,
+                    summary: "x",
+                    timestamp: t0
+                )
+            )
+        )
+        state.apply(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "s1",
+                    request: PermissionRequest(title: "Edit", summary: "edit", affectedPath: "f.swift"),
+                    timestamp: t0.addingTimeInterval(1)
+                )
+            )
+        )
+        // An out-of-order session-end arrives while the prompt is still open.
+        state.apply(
+            .sessionCompleted(
+                SessionCompleted(
+                    sessionID: "s1",
+                    summary: "ended",
+                    timestamp: t0.addingTimeInterval(2),
+                    isSessionEnd: true
+                )
+            )
+        )
+
+        state.resolvePermission(
+            sessionID: "s1",
+            resolution: .allowOnce(),
+            at: t0.addingTimeInterval(3)
+        )
+
+        // Approving must not flip an ended session back to running.
+        #expect(state.session(id: "s1")?.phase == .completed)
+        #expect(state.runningCount == 0)
+        #expect(state.session(id: "s1")?.isVisibleInIsland == false)
+        #expect(state.liveRunningCount == 0)
+    }
 }
 
 private enum SessionStateTestError: Error {

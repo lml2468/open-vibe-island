@@ -506,7 +506,13 @@ struct TerminalJumpService {
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         let pathBytes = socketPath.utf8CString
-        precondition(pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path))
+        // utf8CString includes the trailing NUL; the path (with terminator) must
+        // fit in sun_path. The socket path can come from an untrusted source
+        // (e.g. a world-writable temp file), so degrade gracefully rather than
+        // crashing the app via precondition.
+        guard pathBytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else {
+            return false
+        }
         withUnsafeMutableBytes(of: &addr.sun_path) { sunPath in
             for (i, byte) in pathBytes.enumerated() {
                 sunPath[i] = UInt8(bitPattern: byte)
@@ -520,8 +526,11 @@ struct TerminalJumpService {
         }
         guard connectResult == 0 else { return false }
 
-        // Send JSON-RPC surface.focus request.
-        let request = #"{"jsonrpc":"2.0","method":"surface.focus","params":{"surface_id":"\#(surfaceID)"},"id":1}"# + "\n"
+        // Send JSON-RPC surface.focus request. surfaceID is escaped so a value
+        // containing quotes/backslashes can't break out of the JSON string or
+        // inject extra fields into the request.
+        let escapedSurfaceID = Self.escapeJSONStringContents(surfaceID)
+        let request = #"{"jsonrpc":"2.0","method":"surface.focus","params":{"surface_id":"\#(escapedSurfaceID)"},"id":1}"# + "\n"
         let sent = request.withCString { ptr in
             Darwin.send(fd, ptr, strlen(ptr), 0)
         }
@@ -531,6 +540,29 @@ struct TerminalJumpService {
         try? openAction(["-b", "com.cmuxterm.app"])
 
         return true
+    }
+
+    /// Escapes a string for safe embedding inside a JSON string literal.
+    /// Internal (not private) so the JSON-injection guard can be unit-tested.
+    static func escapeJSONStringContents(_ value: String) -> String {
+        var result = ""
+        result.reserveCapacity(value.count)
+        for scalar in value.unicodeScalars {
+            switch scalar {
+            case "\"": result += "\\\""
+            case "\\": result += "\\\\"
+            case "\n": result += "\\n"
+            case "\r": result += "\\r"
+            case "\t": result += "\\t"
+            default:
+                if scalar.value < 0x20 {
+                    result += String(format: "\\u%04x", scalar.value)
+                } else {
+                    result.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return result
     }
 
     private static func resolveCmuxSocketPath() -> String? {
@@ -679,7 +711,10 @@ struct TerminalJumpService {
         }
 
         let parts = encoded.split(separator: ":", maxSplits: 1)
-        let paneIDString = String(parts[0])
+        guard let firstPart = parts.first else {
+            return false
+        }
+        let paneIDString = String(firstPart)
         let sessionName = parts.count > 1 ? String(parts[1]) : nil
 
         guard let paneID = Int(paneIDString) else {

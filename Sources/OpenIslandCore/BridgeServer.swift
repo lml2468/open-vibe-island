@@ -255,29 +255,44 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func readAvailableData(from clientID: UUID) {
-        guard var client = clients[clientID] else {
+        guard let fileDescriptor = clients[clientID]?.fileDescriptor else {
             return
         }
 
         var localBuffer = [UInt8](repeating: 0, count: 8_192)
 
         while true {
-            let bytesRead = read(client.fileDescriptor, &localBuffer, localBuffer.count)
+            let bytesRead = read(fileDescriptor, &localBuffer, localBuffer.count)
 
             if bytesRead > 0 {
-                client.buffer.append(localBuffer, count: bytesRead)
+                // Work against the live dictionary entry (not a stale copy held
+                // across iterations) because handle() below can mutate
+                // clients[clientID] — e.g. set the role — and a stale write-back
+                // would clobber it. We still keep the per-iteration lookups
+                // minimal: read the buffer out once, decode, write it back once,
+                // then dispatch.
+                guard var buffer = clients[clientID]?.buffer else {
+                    return
+                }
+                buffer.append(localBuffer, count: bytesRead)
 
+                let envelopes: [BridgeEnvelope]
                 do {
-                    let envelopes = try BridgeCodec.decodeLines(from: &client.buffer)
-                    clients[clientID] = client
-
-                    for envelope in envelopes {
-                        if case let .command(command) = envelope {
-                            handle(command, from: clientID)
-                        }
-                    }
+                    envelopes = try BridgeCodec.decodeLines(from: &buffer)
                 } catch {
                     removeClient(clientID)
+                    return
+                }
+                clients[clientID]?.buffer = buffer
+
+                for envelope in envelopes {
+                    if case let .command(command) = envelope {
+                        handle(command, from: clientID)
+                    }
+                }
+
+                // The client may have been removed by handle(); stop if so.
+                guard clients[clientID] != nil else {
                     return
                 }
 
@@ -290,7 +305,6 @@ public final class BridgeServer: @unchecked Sendable {
             }
 
             if errno == EAGAIN || errno == EWOULDBLOCK {
-                clients[clientID] = client
                 return
             }
 
@@ -2201,6 +2215,12 @@ public final class BridgeServer: @unchecked Sendable {
         }
     }
 
+    /// Test seam for `hasSession`, which must consider both the locally-derived
+    /// state and the snapshot pushed from AppModel.
+    func hasSessionForTests(id: String) -> Bool {
+        queue.sync { hasSession(id: id) }
+    }
+
     /// Clears all active subagents from the session.
     /// Called when the session's turn ends (`stop`, `stopFailure`, `sessionEnd`)
     /// to ensure no stale subagent indicators linger.
@@ -2567,7 +2587,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func hasSession(id: String) -> Bool {
-        localState.session(id: id) != nil || localState.session(id: id) != nil
+        localState.session(id: id) != nil || stateSnapshot.session(id: id) != nil
     }
 
     private func send(_ envelope: BridgeEnvelope, to clientID: UUID) {

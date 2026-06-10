@@ -8,6 +8,7 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
     public var summary: String
     public var phase: SessionPhase
     public var updatedAt: Date
+    public var firstSeenAt: Date?
     public var jumpTarget: JumpTarget?
     public var cursorMetadata: CursorSessionMetadata?
 
@@ -19,6 +20,7 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
         summary: String,
         phase: SessionPhase,
         updatedAt: Date,
+        firstSeenAt: Date? = nil,
         jumpTarget: JumpTarget? = nil,
         cursorMetadata: CursorSessionMetadata? = nil
     ) {
@@ -29,6 +31,7 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
         self.summary = summary
         self.phase = phase
         self.updatedAt = updatedAt
+        self.firstSeenAt = firstSeenAt
         self.jumpTarget = jumpTarget
         self.cursorMetadata = cursorMetadata
     }
@@ -42,6 +45,7 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
             summary: session.summary,
             phase: session.phase,
             updatedAt: session.updatedAt,
+            firstSeenAt: session.firstSeenAt,
             jumpTarget: session.jumpTarget,
             cursorMetadata: session.cursorMetadata
         )
@@ -57,6 +61,7 @@ public struct CursorTrackedSessionRecord: Equatable, Codable, Sendable {
             phase: phase,
             summary: summary,
             updatedAt: updatedAt,
+            firstSeenAt: firstSeenAt,
             jumpTarget: jumpTarget,
             cursorMetadata: cursorMetadata
         )

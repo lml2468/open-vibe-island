@@ -90,6 +90,16 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
+            // An ended session is terminal: a late/out-of-order activity event
+            // (the bridge is async NDJSON and JSONL reconciliation races live
+            // hooks) must not resurrect it into a "running" phantom that counts
+            // toward runningCount but is invisible in the island
+            // (isVisibleInIsland is false once isSessionEnded). Only an explicit
+            // .sessionStarted may revive it.
+            guard !session.isSessionEnded else {
+                return
+            }
+
             let keepsPendingApproval = payload.phase == .running
                 && session.phase == .waitingForApproval
                 && session.permissionRequest != nil
@@ -235,6 +245,16 @@ public struct SessionState: Equatable, Sendable {
 
         session.permissionRequest = nil
         session.updatedAt = timestamp
+
+        // If the session already ended (e.g. an out-of-order sessionCompleted
+        // arrived while the permission prompt was still open), don't flip it
+        // back to .running — that would make it count as running yet stay
+        // invisible in the island. Record the resolution but keep it terminal.
+        if session.isSessionEnded {
+            session.phase = .completed
+            upsert(session)
+            return
+        }
 
         if resolution.isApproved {
             session.phase = .running

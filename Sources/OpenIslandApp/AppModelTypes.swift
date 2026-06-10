@@ -19,6 +19,11 @@ enum NotchOpenReason: Equatable {
 enum TrackedEventIngress {
     case bridge
     case rollout
+    /// Codex.app's app-server protocol. Like the bridge these events are
+    /// authoritative for thread state, but the threads have no *local* process,
+    /// so process-attachment/liveness marking must not run for them, and a stale
+    /// activityUpdated must not downgrade an already-completed thread.
+    case appServer
 }
 
 // MARK: - v6 island preferences

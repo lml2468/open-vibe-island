@@ -86,6 +86,19 @@ final class ProcessMonitoringCoordinator {
         }
     }
 
+    /// Stops the recurring session-attachment monitor. Safe to call repeatedly.
+    func stopMonitoring() {
+        sessionAttachmentMonitorTask?.cancel()
+        sessionAttachmentMonitorTask = nil
+    }
+
+    deinit {
+        // The task captures self weakly and observes Task.isCancelled, but
+        // cancel it explicitly so it stops promptly instead of spinning until
+        // the next weak-self check fails.
+        sessionAttachmentMonitorTask?.cancel()
+    }
+
     // MARK: - Reconciliation
 
     func reconcileSessionAttachments(
