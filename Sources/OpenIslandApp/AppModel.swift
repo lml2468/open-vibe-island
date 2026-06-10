@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import OpenIslandCore
 import SwiftUI
+import os
 
 extension Notification.Name {
     /// Posted by `AppModel.showOnboarding()` to ask `SettingsView` to
@@ -49,8 +50,16 @@ final class AppModel {
             _cachedSessionBuckets = nil
             pruneAgentsGridObservationTicketsIfNeeded()
             bridgeServer.updateStateSnapshot(state)
+            // Publish a thread-safe snapshot of the count so the watch endpoint
+            // (which calls activeSessionCountProvider from its own dispatch
+            // queue) can read it without touching main-actor state.
+            let count = state.sessions.count
+            _atomicSessionCount.withLock { $0 = count }
         }
     }
+    /// Thread-safe mirror of `state.sessions.count`, written on the main actor
+    /// from `state.didSet` and readable from any thread.
+    @ObservationIgnored private let _atomicSessionCount = OSAllocatedUnfairLock(initialState: 0)
     @ObservationIgnored private var _cachedSessionBuckets: (primary: [AgentSession], overflow: [AgentSession])?
 
     /// Monotonic ticket assigned the first time a session ID shows up in the
@@ -484,11 +493,10 @@ final class AppModel {
         }
 
         relay.endpoint.activeSessionCountProvider = { [weak self] in
-            // Safe to call from any queue — reads a snapshot count.
+            // Called from the watch endpoint's own dispatch queue, so it must
+            // NOT touch main-actor state. Read the thread-safe mirror instead.
             guard let self else { return 0 }
-            return MainActor.assumeIsolated {
-                self.state.sessions.count
-            }
+            return self._atomicSessionCount.withLock { $0 }
         }
     }
 
@@ -657,7 +665,7 @@ final class AppModel {
         }
 
         codexAppServer.onEvent = { [weak self] event in
-            self?.applyTrackedEvent(event, ingress: .bridge)
+            self?.applyTrackedEvent(event, ingress: .appServer)
         }
         codexAppServer.onStatusMessage = { [weak self] message in
             self?.lastActionMessage = message
@@ -1115,6 +1123,12 @@ final class AppModel {
     private static let bridgeReconnectDelay: Duration = .seconds(2)
     private static let bridgeMaxReconnectDelay: Duration = .seconds(30)
 
+    /// Current exponential-backoff delay. Persisted across reconnect attempts so
+    /// the backoff actually grows: each failure re-schedules a reconnect, and we
+    /// must not reset to the 2s floor every time. Reset only on a successful
+    /// connection.
+    private var bridgeCurrentReconnectDelay: Duration = AppModel.bridgeReconnectDelay
+
     private func connectBridgeObserver() {
         bridgeTask?.cancel()
         bridgeReconnectTask?.cancel()
@@ -1146,6 +1160,7 @@ final class AppModel {
             do {
                 try await client.send(.registerClient(role: .observer))
                 self.isBridgeReady = true
+                self.bridgeCurrentReconnectDelay = Self.bridgeReconnectDelay
                 self.lastActionMessage = "Bridge ready. Waiting for Claude and Codex hook events."
                 self.harnessRuntimeMonitor?.recordMilestone("bridgeReady", message: self.lastActionMessage)
             } catch {
@@ -1178,16 +1193,14 @@ final class AppModel {
 
     private func scheduleBridgeReconnect() {
         bridgeReconnectTask?.cancel()
+        let delay = bridgeCurrentReconnectDelay
+        // Grow the backoff for the *next* attempt; reset to the floor only when a
+        // connection succeeds (see registration success path).
+        bridgeCurrentReconnectDelay = min(delay * 2, Self.bridgeMaxReconnectDelay)
         bridgeReconnectTask = Task { [weak self] in
-            var delay = Self.bridgeReconnectDelay
-            while !Task.isCancelled {
-                try? await Task.sleep(for: delay)
-                guard let self, !Task.isCancelled else { return }
-                self.connectBridgeObserver()
-                // If we're now connected, stop retrying.
-                if self.isBridgeReady { return }
-                delay = min(delay * 2, Self.bridgeMaxReconnectDelay)
-            }
+            try? await Task.sleep(for: delay)
+            guard let self, !Task.isCancelled else { return }
+            self.connectBridgeObserver()
         }
     }
 
@@ -1472,11 +1485,13 @@ final class AppModel {
             return state.session(id: payload.sessionID)?.phase == .completed
         }()
 
-        // Guard: don't let rollout events downgrade a session from completed
-        // back to running. The bridge's sessionCompleted is authoritative; the
-        // rollout watcher may have read the JSONL before task_complete was
-        // flushed, producing a stale activityUpdated(phase: .running).
-        if ingress == .rollout,
+        // Guard: don't let rollout or app-server events downgrade a session
+        // from completed back to running. The bridge's sessionCompleted is
+        // authoritative; the rollout watcher may have read the JSONL before
+        // task_complete was flushed, and the app-server can emit a
+        // threadStatusChanged(.active)→activityUpdated(.running) right after a
+        // turnCompleted(.completed) — both produce a stale activityUpdated.
+        if ingress != .bridge,
            case let .activityUpdated(payload) = event,
            payload.phase == .running,
            state.session(id: payload.sessionID)?.phase == .completed {

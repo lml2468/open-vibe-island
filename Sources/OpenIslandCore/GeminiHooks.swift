@@ -515,6 +515,10 @@ public extension GeminiHookPayload {
             return nil
         }
 
+        guard process.terminationStatus == 0 else {
+            return nil
+        }
+
         let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
         guard !data.isEmpty else {
             return nil

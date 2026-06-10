@@ -115,6 +115,10 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     private static let serviceType = "_openisland._tcp"
     private static let pairingCodeLength = 4
     private static let pairingCodeExpiry: TimeInterval = 120 // 2 minutes
+    /// Max failed /pair attempts before the endpoint locks out further attempts.
+    private static let maxPairingFailures = 5
+    /// How long a lockout lasts after the failure threshold is hit.
+    private static let pairingLockoutDuration: TimeInterval = 60
 
     private let queue = DispatchQueue(label: "app.openisland.watch.http", qos: .userInitiated)
 
@@ -122,6 +126,10 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     private var currentPairingCode: String = ""
     private var pairingCodeGeneratedAt: Date = .distantPast
     private var validTokens: Set<String> = []
+    // Brute-force protection: a 4-digit code is only 10k combinations, so an
+    // unauthenticated attacker on the LAN could exhaust it without a limiter.
+    private var pairingFailureCount = 0
+    private var pairingLockoutUntil: Date = .distantPast
 
     // SSE connections
     private var sseConnections: [UUID: NWConnection] = [:]
@@ -251,7 +259,7 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         receiveHTTPRequest(on: connection)
     }
 
-    private func receiveHTTPRequest(on connection: NWConnection) {
+    private func receiveHTTPRequest(on connection: NWConnection, accumulated: Data = Data()) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] content, _, isComplete, error in
             guard let self else { return }
 
@@ -261,15 +269,73 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
                 return
             }
 
-            guard let data = content, !data.isEmpty else {
-                if isComplete {
-                    connection.cancel()
-                }
+            var buffer = accumulated
+            if let content {
+                buffer.append(content)
+            }
+
+            // Cap the in-flight request so a slowloris/oversized client can't
+            // grow memory without bound.
+            guard buffer.count <= Self.maxRequestByteCount else {
+                self.sendHTTPResponse(connection: connection, status: "413 Payload Too Large", body: #"{"error":"request too large"}"#)
                 return
             }
 
-            self.routeHTTPRequest(data: data, connection: connection)
+            // Wait until we have the full headers, then until the full body
+            // (per Content-Length) has arrived — a request can span multiple
+            // TCP segments.
+            switch Self.requestState(of: buffer) {
+            case .incomplete:
+                if isComplete {
+                    // Peer closed before sending a complete request.
+                    connection.cancel()
+                } else {
+                    self.receiveHTTPRequest(on: connection, accumulated: buffer)
+                }
+            case .complete:
+                self.routeHTTPRequest(data: buffer, connection: connection)
+            }
         }
+    }
+
+    /// Maximum total size of a single buffered HTTP request.
+    private static let maxRequestByteCount = 1 * 1024 * 1024
+
+    private enum RequestParseState {
+        case incomplete
+        case complete
+    }
+
+    /// Determines whether `buffer` contains a complete HTTP request: full header
+    /// section (terminated by CRLFCRLF) plus a body matching Content-Length (if
+    /// present).
+    private static func requestState(of buffer: Data) -> RequestParseState {
+        let separator = Data("\r\n\r\n".utf8)
+        guard let headerEnd = buffer.range(of: separator) else {
+            return .incomplete
+        }
+
+        let headerData = buffer[buffer.startIndex..<headerEnd.lowerBound]
+        let bodyStart = headerEnd.upperBound
+        let bodyLength = buffer.distance(from: bodyStart, to: buffer.endIndex)
+
+        guard let headerString = String(data: headerData, encoding: .utf8) else {
+            // Headers must be ASCII/UTF-8; if they aren't, treat as complete so
+            // routing can reject with a 400 rather than buffering forever.
+            return .complete
+        }
+
+        let contentLength = headerString
+            .components(separatedBy: "\r\n")
+            .compactMap { line -> Int? in
+                let lower = line.lowercased()
+                guard lower.hasPrefix("content-length:") else { return nil }
+                let value = line.drop(while: { $0 != ":" }).dropFirst()
+                return Int(value.trimmingCharacters(in: .whitespaces))
+            }
+            .first ?? 0
+
+        return bodyLength >= contentLength ? .complete : .incomplete
     }
 
     // MARK: - Private: HTTP Routing
@@ -303,6 +369,12 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     // MARK: - Private: Endpoint Handlers
 
     private func handlePair(body: String?, connection: NWConnection) {
+        // Reject while locked out from too many failed attempts.
+        if Date() < pairingLockoutUntil {
+            sendHTTPResponse(connection: connection, status: "429 Too Many Requests", body: #"{"error":"too many attempts"}"#)
+            return
+        }
+
         guard let body, let bodyData = body.data(using: .utf8),
               let request = try? JSONDecoder().decode(WatchPairRequest.self, from: bodyData) else {
             sendHTTPResponse(connection: connection, status: "400 Bad Request", body: #"{"error":"invalid body"}"#)
@@ -317,9 +389,14 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         }
 
         guard request.code == currentPairingCode else {
+            registerPairingFailureUnsafe()
             sendHTTPResponse(connection: connection, status: "403 Forbidden", body: #"{"error":"invalid pairing code"}"#)
             return
         }
+
+        // Success — clear the brute-force counter.
+        pairingFailureCount = 0
+        pairingLockoutUntil = .distantPast
 
         // Generate token
         let token = UUID().uuidString
@@ -332,6 +409,19 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         if let responseData = try? JSONEncoder().encode(response),
            let responseString = String(data: responseData, encoding: .utf8) {
             sendHTTPResponse(connection: connection, status: "200 OK", body: responseString)
+        }
+    }
+
+    /// Records a failed pairing attempt and, once the threshold is reached,
+    /// engages a timed lockout and rotates the code. Must be called on `queue`.
+    private func registerPairingFailureUnsafe() {
+        pairingFailureCount += 1
+        if pairingFailureCount >= Self.maxPairingFailures {
+            pairingLockoutUntil = Date().addingTimeInterval(Self.pairingLockoutDuration)
+            pairingFailureCount = 0
+            // Rotate the code so a guessed-but-late attempt can't reuse it.
+            regeneratePairingCodeUnsafe()
+            Self.logger.warning("Pairing locked out after repeated failures")
         }
     }
 
@@ -447,9 +537,11 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     // MARK: - Private: HTTP Helpers
 
     private func parseHTTPRequest(_ raw: String) -> (method: String, path: String, headers: [String: String], body: String?) {
+        // Split only on the FIRST blank line so a body that itself contains a
+        // blank line isn't truncated.
         let parts = raw.components(separatedBy: "\r\n\r\n")
         let headerSection = parts[0]
-        let body = parts.count > 1 ? parts[1] : nil
+        let body = parts.count > 1 ? parts.dropFirst().joined(separator: "\r\n\r\n") : nil
 
         let lines = headerSection.components(separatedBy: "\r\n")
         guard let requestLine = lines.first else {

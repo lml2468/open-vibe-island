@@ -40,6 +40,7 @@ public enum BridgeTransportError: Error, LocalizedError {
     case alreadyConnected
     case notConnected
     case malformedEnvelope
+    case frameTooLarge
     case responseTimedOut
     case listenerFailed(String)
     case socketPathTooLong
@@ -53,6 +54,8 @@ public enum BridgeTransportError: Error, LocalizedError {
             "The bridge client is not connected."
         case .malformedEnvelope:
             "The bridge transport received malformed data."
+        case .frameTooLarge:
+            "The bridge transport received a frame exceeding the maximum size."
         case .responseTimedOut:
             "The local bridge timed out while waiting for a response."
         case let .listenerFailed(message):
@@ -318,6 +321,11 @@ public enum BridgeCodec {
         return data
     }
 
+    /// Maximum size of a single NDJSON frame (and of the unterminated tail the
+    /// buffer is allowed to accumulate). A peer that streams bytes without a
+    /// newline would otherwise grow the buffer without bound (OOM); this caps it.
+    public static let maxFrameByteCount = 4 * 1024 * 1024
+
     public static func decodeLines(from buffer: inout Data) throws -> [BridgeEnvelope] {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .millisecondsSince1970
@@ -327,6 +335,10 @@ public enum BridgeCodec {
         while let newlineIndex = buffer.firstIndex(of: newline) {
             let line = buffer.prefix(upTo: newlineIndex)
             buffer.removeSubrange(...newlineIndex)
+
+            guard line.count <= maxFrameByteCount else {
+                throw BridgeTransportError.frameTooLarge
+            }
 
             guard !line.isEmpty else {
                 continue
@@ -338,6 +350,12 @@ public enum BridgeCodec {
             } catch {
                 throw BridgeTransportError.malformedEnvelope
             }
+        }
+
+        // No complete frame yet: if the unterminated remainder already exceeds
+        // the cap, the peer is sending an oversized/never-terminated frame.
+        guard buffer.count <= maxFrameByteCount else {
+            throw BridgeTransportError.frameTooLarge
         }
 
         return messages

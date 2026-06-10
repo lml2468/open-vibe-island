@@ -255,26 +255,38 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func readAvailableData(from clientID: UUID) {
-        guard var client = clients[clientID] else {
+        guard let fileDescriptor = clients[clientID]?.fileDescriptor else {
             return
         }
 
         var localBuffer = [UInt8](repeating: 0, count: 8_192)
 
         while true {
-            let bytesRead = read(client.fileDescriptor, &localBuffer, localBuffer.count)
+            let bytesRead = read(fileDescriptor, &localBuffer, localBuffer.count)
 
             if bytesRead > 0 {
-                client.buffer.append(localBuffer, count: bytesRead)
+                // Mutate the live dictionary entry rather than a stale local copy:
+                // handle() below can mutate clients[clientID] (e.g. set the role),
+                // and carrying a stale copy across iterations would clobber it.
+                guard clients[clientID] != nil else {
+                    return
+                }
+                clients[clientID]?.buffer.append(localBuffer, count: bytesRead)
 
                 do {
-                    let envelopes = try BridgeCodec.decodeLines(from: &client.buffer)
-                    clients[clientID] = client
+                    var buffer = clients[clientID]?.buffer ?? Data()
+                    let envelopes = try BridgeCodec.decodeLines(from: &buffer)
+                    clients[clientID]?.buffer = buffer
 
                     for envelope in envelopes {
                         if case let .command(command) = envelope {
                             handle(command, from: clientID)
                         }
+                    }
+
+                    // The client may have been removed by handle(); stop if so.
+                    guard clients[clientID] != nil else {
+                        return
                     }
                 } catch {
                     removeClient(clientID)
@@ -290,7 +302,6 @@ public final class BridgeServer: @unchecked Sendable {
             }
 
             if errno == EAGAIN || errno == EWOULDBLOCK {
-                clients[clientID] = client
                 return
             }
 
@@ -2567,7 +2578,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func hasSession(id: String) -> Bool {
-        localState.session(id: id) != nil || localState.session(id: id) != nil
+        localState.session(id: id) != nil || stateSnapshot.session(id: id) != nil
     }
 
     private func send(_ envelope: BridgeEnvelope, to clientID: UUID) {
