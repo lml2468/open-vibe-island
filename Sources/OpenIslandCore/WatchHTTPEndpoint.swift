@@ -119,6 +119,8 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     private static let maxPairingFailures = 5
     /// How long a lockout lasts after the failure threshold is hit.
     private static let pairingLockoutDuration: TimeInterval = 60
+    /// Maximum total size of a single buffered HTTP request.
+    static let maxRequestByteCount = 1 * 1024 * 1024
 
     private let queue = DispatchQueue(label: "app.openisland.watch.http", qos: .userInitiated)
 
@@ -128,8 +130,10 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     private var validTokens: Set<String> = []
     // Brute-force protection: a 4-digit code is only 10k combinations, so an
     // unauthenticated attacker on the LAN could exhaust it without a limiter.
-    private var pairingFailureCount = 0
-    private var pairingLockoutUntil: Date = .distantPast
+    private var pairingThrottle = PairingThrottle(
+        maxFailures: WatchHTTPEndpoint.maxPairingFailures,
+        lockoutDuration: WatchHTTPEndpoint.pairingLockoutDuration
+    )
 
     // SSE connections
     private var sseConnections: [UUID: NWConnection] = [:]
@@ -298,68 +302,131 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         }
     }
 
-    /// Maximum total size of a single buffered HTTP request.
-    private static let maxRequestByteCount = 1 * 1024 * 1024
-
-    private enum RequestParseState {
+    enum RequestParseState: Equatable {
         case incomplete
         case complete
     }
 
-    /// Determines whether `buffer` contains a complete HTTP request: full header
-    /// section (terminated by CRLFCRLF) plus a body matching Content-Length (if
-    /// present).
-    private static func requestState(of buffer: Data) -> RequestParseState {
-        let separator = Data("\r\n\r\n".utf8)
-        guard let headerEnd = buffer.range(of: separator) else {
-            return .incomplete
+    /// Parsed view of an HTTP request's head. `headers` keys preserve their
+    /// original casing; `contentLength` is the parsed, validated body length
+    /// (nil when absent), and `contentLengthInvalid` flags a present-but-garbage
+    /// (negative / non-numeric / oversized) value so routing can reject it.
+    struct RequestHead {
+        var method: String
+        var path: String
+        var headers: [String: String]
+        var contentLength: Int?
+        var contentLengthInvalid: Bool
+        /// Byte offset (from the buffer's start) at which the body begins.
+        var bodyStartOffset: Int
+    }
+
+    private static let crlfcrlf = Data("\r\n\r\n".utf8)
+
+    /// Single source of truth for HTTP framing: locates the header terminator,
+    /// parses the request line + headers, and validates Content-Length. Returns
+    /// nil while the header section is still incomplete. Both the completeness
+    /// check and routing consume this so framing semantics live in one place.
+    static func parseRequestHead(_ data: Data) -> RequestHead? {
+        guard let headerEnd = data.range(of: crlfcrlf) else {
+            return nil
         }
 
-        let headerData = buffer[buffer.startIndex..<headerEnd.lowerBound]
-        let bodyStart = headerEnd.upperBound
-        let bodyLength = buffer.distance(from: bodyStart, to: buffer.endIndex)
+        let bodyStartOffset = data.distance(from: data.startIndex, to: headerEnd.upperBound)
+        let headerData = data[data.startIndex..<headerEnd.lowerBound]
 
         guard let headerString = String(data: headerData, encoding: .utf8) else {
-            // Headers must be ASCII/UTF-8; if they aren't, treat as complete so
-            // routing can reject with a 400 rather than buffering forever.
-            return .complete
+            // Non-UTF8 headers: surface an empty head so routing rejects with a
+            // 400 rather than buffering forever.
+            return RequestHead(
+                method: "",
+                path: "",
+                headers: [:],
+                contentLength: nil,
+                contentLengthInvalid: false,
+                bodyStartOffset: bodyStartOffset
+            )
         }
 
-        let contentLength = headerString
-            .components(separatedBy: "\r\n")
-            .compactMap { line -> Int? in
-                let lower = line.lowercased()
-                guard lower.hasPrefix("content-length:") else { return nil }
-                let value = line.drop(while: { $0 != ":" }).dropFirst()
-                return Int(value.trimmingCharacters(in: .whitespaces))
-            }
-            .first ?? 0
+        let lines = headerString.components(separatedBy: "\r\n")
+        let requestLine = lines.first ?? ""
+        let requestParts = requestLine.split(separator: " ", maxSplits: 2)
+        let method = requestParts.count > 0 ? String(requestParts[0]) : ""
+        let path = requestParts.count > 1 ? String(requestParts[1]) : ""
 
-        return bodyLength >= contentLength ? .complete : .incomplete
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard let colonIndex = line.firstIndex(of: ":") else { continue }
+            let key = String(line[line.startIndex..<colonIndex]).trimmingCharacters(in: .whitespaces)
+            let value = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+            headers[key] = value
+        }
+
+        var contentLength: Int?
+        var contentLengthInvalid = false
+        for (key, value) in headers where key.lowercased() == "content-length" {
+            if let parsed = Int(value), parsed >= 0, parsed <= maxRequestByteCount {
+                contentLength = parsed
+            } else {
+                contentLengthInvalid = true
+            }
+            break
+        }
+
+        return RequestHead(
+            method: method,
+            path: path,
+            headers: headers,
+            contentLength: contentLength,
+            contentLengthInvalid: contentLengthInvalid,
+            bodyStartOffset: bodyStartOffset
+        )
+    }
+
+    /// Determines whether `buffer` contains a complete HTTP request: full header
+    /// section (terminated by CRLFCRLF) plus a body matching Content-Length.
+    static func requestState(of buffer: Data) -> RequestParseState {
+        guard let head = parseRequestHead(buffer) else {
+            return .incomplete
+        }
+        // A garbage Content-Length can never be satisfied by waiting; treat the
+        // request as complete so routing can reject it with a 400.
+        if head.contentLengthInvalid {
+            return .complete
+        }
+        let bodyLength = buffer.count - head.bodyStartOffset
+        return bodyLength >= (head.contentLength ?? 0) ? .complete : .incomplete
     }
 
     // MARK: - Private: HTTP Routing
 
     private func routeHTTPRequest(data: Data, connection: NWConnection) {
-        guard let requestString = String(data: data, encoding: .utf8) else {
+        guard let head = Self.parseRequestHead(data), !head.method.isEmpty else {
             sendHTTPResponse(connection: connection, status: "400 Bad Request", body: #"{"error":"invalid request"}"#)
             return
         }
 
-        let (method, path, headers, body) = parseHTTPRequest(requestString)
+        if head.contentLengthInvalid {
+            sendHTTPResponse(connection: connection, status: "400 Bad Request", body: #"{"error":"invalid content-length"}"#)
+            return
+        }
 
-        switch (method, path) {
+        let bodyStart = data.index(data.startIndex, offsetBy: head.bodyStartOffset)
+        let bodyData = data[bodyStart...]
+        let body = bodyData.isEmpty ? nil : String(data: Data(bodyData), encoding: .utf8)
+
+        switch (head.method, head.path) {
         case ("POST", "/pair"):
             handlePair(body: body, connection: connection)
 
         case ("GET", "/events"):
-            handleEventsSSE(headers: headers, connection: connection)
+            handleEventsSSE(headers: head.headers, connection: connection)
 
         case ("POST", "/resolution"):
-            handleResolution(body: body, headers: headers, connection: connection)
+            handleResolution(body: body, headers: head.headers, connection: connection)
 
         case ("GET", "/status"):
-            handleStatus(headers: headers, connection: connection)
+            handleStatus(headers: head.headers, connection: connection)
 
         default:
             sendHTTPResponse(connection: connection, status: "404 Not Found", body: #"{"error":"not found"}"#)
@@ -370,7 +437,7 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
 
     private func handlePair(body: String?, connection: NWConnection) {
         // Reject while locked out from too many failed attempts.
-        if Date() < pairingLockoutUntil {
+        if pairingThrottle.isLockedOut(now: Date()) {
             sendHTTPResponse(connection: connection, status: "429 Too Many Requests", body: #"{"error":"too many attempts"}"#)
             return
         }
@@ -389,14 +456,13 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         }
 
         guard request.code == currentPairingCode else {
-            registerPairingFailureUnsafe()
+            pairingThrottle.registerFailure(now: Date())
             sendHTTPResponse(connection: connection, status: "403 Forbidden", body: #"{"error":"invalid pairing code"}"#)
             return
         }
 
         // Success — clear the brute-force counter.
-        pairingFailureCount = 0
-        pairingLockoutUntil = .distantPast
+        pairingThrottle.reset()
 
         // Generate token
         let token = UUID().uuidString
@@ -412,16 +478,37 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         }
     }
 
-    /// Records a failed pairing attempt and, once the threshold is reached,
-    /// engages a timed lockout and rotates the code. Must be called on `queue`.
-    private func registerPairingFailureUnsafe() {
-        pairingFailureCount += 1
-        if pairingFailureCount >= Self.maxPairingFailures {
-            pairingLockoutUntil = Date().addingTimeInterval(Self.pairingLockoutDuration)
-            pairingFailureCount = 0
-            // Rotate the code so a guessed-but-late attempt can't reuse it.
-            regeneratePairingCodeUnsafe()
-            Self.logger.warning("Pairing locked out after repeated failures")
+    /// Brute-force throttle for the pairing endpoint. Pure value type with
+    /// injectable time so the lockout state machine is unit-testable.
+    ///
+    /// The lockout is intentionally global (not per-peer): this is a local-first
+    /// app on a trusted LAN, so a single counter is enough to defeat brute-force
+    /// of the 4-digit code. It deliberately does NOT rotate the code on lockout —
+    /// the code already rotates on expiry and on successful pairing, and rotating
+    /// here would let any LAN peer invalidate the legitimate user's displayed
+    /// code mid-pairing. After the lockout window passes the same code still
+    /// works for the real user.
+    struct PairingThrottle {
+        let maxFailures: Int
+        let lockoutDuration: TimeInterval
+        private(set) var failureCount = 0
+        private(set) var lockedOutUntil: Date = .distantPast
+
+        func isLockedOut(now: Date) -> Bool {
+            now < lockedOutUntil
+        }
+
+        mutating func registerFailure(now: Date) {
+            failureCount += 1
+            if failureCount >= maxFailures {
+                lockedOutUntil = now.addingTimeInterval(lockoutDuration)
+                failureCount = 0
+            }
+        }
+
+        mutating func reset() {
+            failureCount = 0
+            lockedOutUntil = .distantPast
         }
     }
 
@@ -535,34 +622,6 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     }
 
     // MARK: - Private: HTTP Helpers
-
-    private func parseHTTPRequest(_ raw: String) -> (method: String, path: String, headers: [String: String], body: String?) {
-        // Split only on the FIRST blank line so a body that itself contains a
-        // blank line isn't truncated.
-        let parts = raw.components(separatedBy: "\r\n\r\n")
-        let headerSection = parts[0]
-        let body = parts.count > 1 ? parts.dropFirst().joined(separator: "\r\n\r\n") : nil
-
-        let lines = headerSection.components(separatedBy: "\r\n")
-        guard let requestLine = lines.first else {
-            return ("", "", [:], nil)
-        }
-
-        let requestParts = requestLine.split(separator: " ", maxSplits: 2)
-        let method = requestParts.count > 0 ? String(requestParts[0]) : ""
-        let path = requestParts.count > 1 ? String(requestParts[1]) : ""
-
-        var headers: [String: String] = [:]
-        for line in lines.dropFirst() {
-            if let colonIndex = line.firstIndex(of: ":") {
-                let key = String(line[line.startIndex..<colonIndex]).trimmingCharacters(in: .whitespaces)
-                let value = String(line[line.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
-                headers[key] = value
-            }
-        }
-
-        return (method, path, headers, body?.isEmpty == true ? nil : body)
-    }
 
     private func sendHTTPResponse(connection: NWConnection, status: String, body: String, contentType: String = "application/json") {
         let response = """

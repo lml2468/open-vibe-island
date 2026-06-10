@@ -1407,6 +1407,10 @@ struct SessionStateTests {
 
         #expect(state.session(id: "s1")?.phase == .completed)
         #expect(state.runningCount == 0)
+        // The core hazard is a session counted as running yet invisible in the
+        // island; assert it stays invisible (hook-managed + ended).
+        #expect(state.session(id: "s1")?.isVisibleInIsland == false)
+        #expect(state.liveRunningCount == 0)
     }
 
     @Test
@@ -1456,6 +1460,8 @@ struct SessionStateTests {
         // Approving must not flip an ended session back to running.
         #expect(state.session(id: "s1")?.phase == .completed)
         #expect(state.runningCount == 0)
+        #expect(state.session(id: "s1")?.isVisibleInIsland == false)
+        #expect(state.liveRunningCount == 0)
     }
 }
 

@@ -543,7 +543,8 @@ struct TerminalJumpService {
     }
 
     /// Escapes a string for safe embedding inside a JSON string literal.
-    private static func escapeJSONStringContents(_ value: String) -> String {
+    /// Internal (not private) so the JSON-injection guard can be unit-tested.
+    static func escapeJSONStringContents(_ value: String) -> String {
         var result = ""
         result.reserveCapacity(value.count)
         for scalar in value.unicodeScalars {

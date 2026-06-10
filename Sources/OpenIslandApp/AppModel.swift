@@ -1121,7 +1121,17 @@ final class AppModel {
     // MARK: - Bridge observer connection
 
     private static let bridgeReconnectDelay: Duration = .seconds(2)
-    private static let bridgeMaxReconnectDelay: Duration = .seconds(30)
+    nonisolated static let bridgeMaxReconnectDelay: Duration = .seconds(30)
+
+    /// Computes the next exponential-backoff delay: double the current value,
+    /// capped at the maximum. Pure function so the growth/cap behavior is
+    /// unit-testable independently of Task scheduling.
+    nonisolated static func nextBridgeReconnectDelay(
+        after current: Duration,
+        max maximum: Duration = AppModel.bridgeMaxReconnectDelay
+    ) -> Duration {
+        min(current * 2, maximum)
+    }
 
     /// Current exponential-backoff delay. Persisted across reconnect attempts so
     /// the backoff actually grows: each failure re-schedules a reconnect, and we
@@ -1196,7 +1206,7 @@ final class AppModel {
         let delay = bridgeCurrentReconnectDelay
         // Grow the backoff for the *next* attempt; reset to the floor only when a
         // connection succeeds (see registration success path).
-        bridgeCurrentReconnectDelay = min(delay * 2, Self.bridgeMaxReconnectDelay)
+        bridgeCurrentReconnectDelay = Self.nextBridgeReconnectDelay(after: delay)
         bridgeReconnectTask = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard let self, !Task.isCancelled else { return }
@@ -1590,7 +1600,12 @@ final class AppModel {
             return false
         }
 
-        return (ingress == .bridge || !isResolvingInitialLiveSessions)
+        // App-server (and bridge) events are authoritative and not gated by the
+        // initial-live-session resolution window: codex.app threads use
+        // app-level liveness with no local process to resolve, so suppressing
+        // their notifications during cold-start resolution would silently drop
+        // real permission/question prompts.
+        return ((ingress == .bridge || ingress == .appServer) || !isResolvingInitialLiveSessions)
             && (notchStatus == .closed || notchOpenReason == .notification)
             && !overlay.shouldPreserveCurrentNotificationSurface(against: surface)
             && surface.matchesCurrentState(of: session)
