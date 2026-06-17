@@ -317,6 +317,60 @@ struct ClaudeHooksTests {
     }
 
     @Test
+    func claudeInferTerminalAppRecognizesClaudeDesktopViaEntrypoint() {
+        // Claude Code launched by the Claude desktop app runs as a TTY-less
+        // subprocess, so process discovery never sees it. Tag the session as
+        // "Claude.app" so liveness follows the desktop app instead of a
+        // non-existent terminal process. CLAUDE_CODE_ENTRYPOINT is set by
+        // Claude Code itself ("claude-desktop"), so it's authoritative.
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["CLAUDE_CODE_ENTRYPOINT": "claude-desktop"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+        #expect(payload.defaultJumpTarget.terminalApp == "Claude.app")
+    }
+
+    @Test
+    func claudeInferTerminalAppRecognizesClaudeDesktopViaBundleIdentifier() {
+        // Fallback signal: the hook binary inherits __CFBundleIdentifier from
+        // Claude.app when launched as its subprocess.
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: ["__CFBundleIdentifier": "com.anthropic.claudefordesktop"],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+    }
+
+    @Test
+    func claudeInferTerminalAppPrefersClaudeDesktopOverLeakedTermProgram() {
+        // Launching Claude.app from a terminal (e.g. `open -a Claude` from
+        // Ghostty) leaks the parent shell's TERM_PROGRAM into the subprocess
+        // env. The desktop entrypoint signal must dominate so the session is
+        // not misclassified as the launching terminal.
+        let payload = ClaudeHookPayload(
+            cwd: "/tmp/demo", hookEventName: .sessionStart, sessionID: "s1"
+        ).withRuntimeContext(
+            environment: [
+                "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
+                "TERM_PROGRAM": "ghostty",
+            ],
+            currentTTYProvider: { nil },
+            terminalLocatorProvider: { _ in (sessionID: nil, tty: nil, title: nil) }
+        )
+
+        #expect(payload.terminalApp == "Claude.app")
+    }
+
+    @Test
     func claudePermissionRequestReturnsAllowDirectiveAfterApproval() async throws {
         let socketURL = BridgeSocketLocation.uniqueTestURL()
         let server = BridgeServer(socketURL: socketURL)

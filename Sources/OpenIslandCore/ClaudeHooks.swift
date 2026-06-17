@@ -1163,6 +1163,25 @@ public extension ClaudeHookPayload {
             return "Zellij"
         }
 
+        // Claude desktop app — Claude Code launched by Claude.app (its "local
+        // agent mode") runs as a TTY-less subprocess, so process discovery
+        // never sees it and the hook-managed liveness fallback would evict the
+        // session after a couple of polls. Tag it as "Claude.app" so liveness
+        // follows the desktop app (NSRunningApplication) instead of a
+        // non-existent terminal process.
+        //
+        // CLAUDE_CODE_ENTRYPOINT is set by Claude Code itself ("claude-desktop"
+        // vs "cli"), so it is authoritative; __CFBundleIdentifier is a
+        // corroborating fallback. Checked BEFORE TERM_PROGRAM because launching
+        // Claude.app from a terminal leaks the parent shell's TERM_PROGRAM into
+        // the subprocess env, which would otherwise misclassify the session as
+        // the launching terminal (same leak rationale as the TERM_PROGRAM
+        // comment below).
+        if environment["CLAUDE_CODE_ENTRYPOINT"] == "claude-desktop"
+            || environment["__CFBundleIdentifier"]?.lowercased() == "com.anthropic.claudefordesktop" {
+            return "Claude.app"
+        }
+
         // TERM_PROGRAM is the only authoritative terminal signal. Each
         // terminal sets it explicitly when it execs the user's shell, so
         // unlike per-app env vars (GHOSTTY_RESOURCES_DIR,
