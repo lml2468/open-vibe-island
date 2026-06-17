@@ -14,6 +14,13 @@ struct PerformancePolicyTests {
         #expect(UnifiedBars.Mode.waiting.timelineInterval == nil)
     }
 
+    @Test
+    func activeUnifiedBarsUseCoreAnimationLayerAnimation() {
+        #expect(!UnifiedBars.Mode.idle.usesLayerAnimation)
+        #expect(UnifiedBars.Mode.running.usesLayerAnimation)
+        #expect(UnifiedBars.Mode.waiting.usesLayerAnimation)
+    }
+
     @MainActor
     @Test
     func monitoringPollIntervalBacksOffOutsideStartupResolution() {
