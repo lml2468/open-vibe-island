@@ -2159,11 +2159,12 @@ private struct StructuredQuestionPromptView: View {
 
                     Spacer(minLength: 0)
 
-                    if isSelected {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(IslandDesignPalette.Status.completed)
-                    }
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(IslandDesignPalette.Status.completed)
+                        .opacity(isSelected ? 1 : 0)
+                        .scaleEffect(isSelected ? 1 : 0.7)
+                        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isSelected)
                 }
                 .contentShape(Rectangle())
                 .padding(.vertical, 5)
@@ -2172,8 +2173,10 @@ private struct StructuredQuestionPromptView: View {
             .buttonStyle(.plain)
 
             if showsFreeform {
-                Divider()
-                    .overlay(Color.white.opacity(0.08))
+                Rectangle()
+                    .fill(Color.white.opacity(0.045))
+                    .frame(height: 1)
+                    .padding(.vertical, 6)
                 freeformField(for: option, question: question)
             }
         }
@@ -2186,7 +2189,7 @@ private struct StructuredQuestionPromptView: View {
                 .strokeBorder(optionStrokeColor(isSelected: isSelected, isHovered: isHovered))
         )
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
+            withAnimation(.easeInOut(duration: 0.18)) {
                 hoveredOptionKey = hovering ? key : (hoveredOptionKey == key ? nil : hoveredOptionKey)
             }
         }
