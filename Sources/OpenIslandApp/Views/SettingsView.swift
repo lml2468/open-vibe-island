@@ -91,6 +91,7 @@ enum SettingsSection: String, CaseIterable {
 struct SettingsView: View {
     var model: AppModel
     @State private var selectedTab: SettingsTab = .general
+    @State private var hoveredTab: SettingsTab?
 
     private var lang: LanguageManager { model.lang }
 
@@ -116,13 +117,21 @@ struct SettingsView: View {
             ForEach(SettingsSection.allCases, id: \.self) { section in
                 Section(section.header(lang)) {
                     ForEach(section.tabs) { tab in
-                        Label {
-                            Text(tab.label(lang))
-                        } icon: {
-                            Image(systemName: tab.icon)
-                                .foregroundStyle(tab.iconColor)
-                        }
+                        SidebarRow(
+                            tab: tab,
+                            label: tab.label(lang),
+                            isSelected: selectedTab == tab,
+                            isHovered: hoveredTab == tab
+                        )
                         .tag(tab)
+                        .listRowBackground(Color.clear)
+                        .onHover { hovering in
+                            if hovering {
+                                hoveredTab = tab
+                            } else if hoveredTab == tab {
+                                hoveredTab = nil
+                            }
+                        }
                     }
                 }
             }
@@ -164,6 +173,46 @@ struct SettingsView: View {
                 .padding(.trailing, 16)
             }
         }
+    }
+}
+
+// MARK: - Sidebar row
+
+private struct SidebarRow: View {
+    let tab: SettingsTab
+    let label: String
+    let isSelected: Bool
+    let isHovered: Bool
+
+    private var backgroundOpacity: Double {
+        if isSelected { return 0.08 }
+        if isHovered { return 0.045 }
+        return 0
+    }
+
+    private var tintOpacity: Double {
+        (isSelected || isHovered) ? 1.0 : 0.6
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: tab.icon)
+                .font(.system(size: 13))
+                .frame(width: 18)
+            Text(label)
+                .font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(V6Palette.paper.opacity(tintOpacity))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(V6Palette.paper.opacity(backgroundOpacity))
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .animation(.easeInOut(duration: 0.18), value: isSelected)
+        .animation(.easeInOut(duration: 0.18), value: isHovered)
     }
 }
 
@@ -1247,6 +1296,6 @@ struct UpdateBanner: View {
             )
         }
         .buttonStyle(.plain)
-        .shadow(color: .blue.opacity(0.3), radius: 4, y: 2)
+        .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
     }
 }
