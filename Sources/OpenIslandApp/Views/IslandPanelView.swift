@@ -378,18 +378,17 @@ struct IslandPanelView: View {
         HStack(spacing: Self.headerControlSpacing) {
             headerIconButton(
                 systemName: model.isSoundMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
-                tint: model.isSoundMuted ? .orange.opacity(0.92) : .white.opacity(0.62)
+                isMuted: model.isSoundMuted
             ) {
                 model.toggleSoundMuted()
             }
 
-            headerIconButton(systemName: "gearshape.fill", tint: .white.opacity(0.62)) {
+            headerIconButton(systemName: "gearshape.fill") {
                 model.showSettings()
             }
 
             headerIconButton(
                 systemName: "power",
-                tint: .white.opacity(0.62),
                 accessibilityLabel: model.lang.t("island.quit.confirmTitle")
             ) {
                 showingQuitConfirmation = true
@@ -399,18 +398,14 @@ struct IslandPanelView: View {
 
     private func headerIconButton(
         systemName: String,
-        tint: Color,
+        isMuted: Bool = false,
         accessibilityLabel: String? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: Self.headerControlButtonSize, height: Self.headerControlButtonSize)
-                .background(.white.opacity(0.08), in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(IslandHeaderIconButtonStyle(isMuted: isMuted))
         .accessibilityLabel(accessibilityLabel ?? systemName)
     }
 
