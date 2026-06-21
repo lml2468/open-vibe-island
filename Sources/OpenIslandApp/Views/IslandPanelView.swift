@@ -1255,7 +1255,7 @@ private struct IslandSessionRow: View {
         .opacity(isStaleCompleted ? 0.7 : 1)
         .modifier(ConditionalDrawingGroup(enabled: useDrawingGroup && !isActionable))
         .contentShape(Rectangle())
-        .animation(.easeInOut(duration: 0.15), value: isHighlighted)
+        .animation(.easeInOut(duration: 0.18), value: isHighlighted)
         .onTapGesture(perform: handlePrimaryTap)
         .onHover { hovering in
             guard isInteractive, allowsRowHoverHighlight else { return }
@@ -1981,6 +1981,8 @@ private struct IslandSessionRow: View {
                 )
                 .rotationEffect(.degrees(isOpen ? 180 : 0))
                 .contentShape(Rectangle())
+                .animation(.easeInOut(duration: 0.18), value: isOpen)
+                .animation(.easeInOut(duration: 0.18), value: isHighlighted)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isOpen ? "Collapse session detail" : "Expand session detail")
