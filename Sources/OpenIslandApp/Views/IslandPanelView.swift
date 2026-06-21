@@ -2588,6 +2588,8 @@ private struct IslandCompactButtonStyle: ButtonStyle {
                 in: Capsule()
             )
             .opacity(configuration.isPressed ? 0.7 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(IslandMotion.bouncySpring, value: configuration.isPressed)
     }
 }
 
@@ -2604,33 +2606,37 @@ private struct IslandActionButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
+        let shadow = shadowStyle(isPressed: configuration.isPressed)
+        return configuration.label
             .font(.system(size: 11.8, weight: .semibold))
             .foregroundStyle(foregroundColor)
             .lineLimit(1)
             .frame(maxWidth: expands ? .infinity : nil)
             .padding(.horizontal, 13)
             .padding(.vertical, 8)
-            .background(backgroundColor(configuration.isPressed), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(backgroundColor(configuration.isPressed), in: shape)
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(strokeColor, lineWidth: 1)
+                shape.strokeBorder(strokeColor, lineWidth: 1)
             )
             .opacity(configuration.isPressed ? 0.82 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .shadow(color: shadow.color, radius: shadow.radius, x: shadow.x, y: shadow.y)
+            .animation(IslandMotion.bouncySpring, value: configuration.isPressed)
     }
 
     private var foregroundColor: Color {
         guard isEnabled else {
-            return V6Palette.paper.opacity(0.42)
+            return V6Palette.paper.opacity(IslandOpacity.muted)
         }
 
         switch kind {
         case .primary:
-            return .black.opacity(0.88)
+            return .black.opacity(IslandOpacity.strong)
         case .warning:
             return .white
         case .secondary:
-            return V6Palette.paper.opacity(0.78)
+            return V6Palette.paper.opacity(IslandOpacity.soft)
         }
     }
 
@@ -2662,6 +2668,22 @@ private struct IslandActionButtonStyle: ButtonStyle {
             return Color(red: 0.85, green: 0.55, blue: 0.15).opacity(pressedFactor)
         case .secondary:
             return Color.white.opacity(isPressed ? 0.11 : 0.065)
+        }
+    }
+
+    /// Lift only the prominent kinds. `.secondary` stays flat to read as a
+    /// chrome-style affordance. On press the shadow softens so the button
+    /// reads as pushed-down.
+    private func shadowStyle(isPressed: Bool) -> IslandShadowStyle {
+        guard isEnabled else {
+            return IslandShadowStyle(color: .clear, radius: 0, x: 0, y: 0)
+        }
+        switch kind {
+        case .primary, .warning:
+            let opacity = isPressed ? 0.08 : 0.18
+            return IslandShadowStyle(color: .black.opacity(opacity), radius: 4, x: 0, y: 2)
+        case .secondary:
+            return IslandShadowStyle(color: .clear, radius: 0, x: 0, y: 0)
         }
     }
 }
