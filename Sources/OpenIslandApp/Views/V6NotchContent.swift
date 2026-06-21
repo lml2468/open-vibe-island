@@ -194,7 +194,7 @@ struct V6CenterLabelView: View {
         Text(text)
             .font(.system(size: 11.5, weight: .medium, design: .monospaced))
             .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+            .truncationMode(.tail)
             .foregroundStyle(V6Palette.paper)
     }
 
@@ -253,6 +253,11 @@ struct V6ClosedPill: View {
         return ZStack {
             V6ClosedPillShape()
                 .fill(V6Palette.ink)
+                .overlay(
+                    V6ClosedPillShape()
+                        .stroke(V6Palette.paper.opacity(0.06), lineWidth: 0.5)
+                        .padding(0.5)
+                )
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)
@@ -261,6 +266,7 @@ struct V6ClosedPill: View {
                 if let label {
                     V6CenterLabelView(text: label)
                         .padding(.leading, 6)
+                        .layoutPriority(1)
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
 
@@ -293,6 +299,11 @@ struct V6ClosedPill: View {
         return ZStack {
             V6ClosedPillShape()
                 .fill(V6Palette.ink)
+                .overlay(
+                    V6ClosedPillShape()
+                        .stroke(V6Palette.paper.opacity(0.06), lineWidth: 0.5)
+                        .padding(0.5)
+                )
 
             HStack(spacing: 0) {
                 UnifiedBars(mode: mode, size: 24)

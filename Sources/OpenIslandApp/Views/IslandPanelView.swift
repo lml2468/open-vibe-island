@@ -228,7 +228,7 @@ struct IslandPanelView: View {
         .animation(notchTransitionAnimation, value: model.notchStatus)
         .contentShape(Rectangle())
         .onHover { hovering in
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
                 isHovering = hovering
             }
         }
@@ -283,6 +283,8 @@ struct IslandPanelView: View {
             minWidth: 70
         )
         .scaleEffect(isPopping ? 1.04 : 1, anchor: .top)
+        .shadow(color: .black.opacity(isHovering ? 0.25 : 0.0), radius: 4, x: 0, y: 2)
+        .animation(.easeInOut(duration: 0.18), value: isHovering)
         .animation(popAnimation, value: isPopping)
     }
 
