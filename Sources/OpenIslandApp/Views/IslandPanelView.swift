@@ -1250,6 +1250,7 @@ private struct IslandSessionRow: View {
                     .frame(width: 3)
                     .padding(.vertical, showsDetail ? 10 : 8)
                     .padding(.leading, 14)
+                    .animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.32), value: presence)
             }
         }
         .opacity(isStaleCompleted ? 0.7 : 1)
@@ -1316,6 +1317,7 @@ private struct IslandSessionRow: View {
         .padding(.trailing, sideInset)
         .padding(.top, 11)
         .padding(.bottom, showsDetail ? 8 : 11)
+        .animation(.easeInOut(duration: 0.18), value: stateIndicator)
     }
 
     @ViewBuilder
@@ -1885,8 +1887,9 @@ private struct IslandSessionRow: View {
                     .fill(tint)
                     .frame(width: 9, height: 9)
                     .scaleEffect(1 + (pulse * 0.18))
-                    .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 4 + (pulse * 3))
+                    .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 2.5 + (pulse * 3))
                     .padding(.top, 6)
+                    .animation(.easeInOut(duration: 0.18), value: presence)
             }
             .frame(width: 10, height: 24, alignment: .top)
         case .bar:
