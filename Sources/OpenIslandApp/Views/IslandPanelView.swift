@@ -729,9 +729,7 @@ struct IslandPanelView: View {
         .padding(.trailing, sessionListSideInset)
         .frame(height: 36)
         .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(.white.opacity(0.055))
-                .frame(height: 1)
+            IslandDivider()
         }
     }
 
@@ -739,9 +737,7 @@ struct IslandPanelView: View {
         Color.clear
             .frame(height: 10)
         .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.white.opacity(0.055))
-                .frame(height: 1)
+            IslandDivider()
         }
     }
 
@@ -831,9 +827,7 @@ struct IslandPanelView: View {
         .padding(.bottom, 7)
         .background(Color.white.opacity(0.008))
         .overlay(alignment: .top) {
-            Rectangle()
-                .fill(.white.opacity(0.055))
-                .frame(height: 1)
+            IslandDivider()
         }
     }
 
