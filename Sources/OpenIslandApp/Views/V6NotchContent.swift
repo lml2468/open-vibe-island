@@ -170,18 +170,15 @@ private struct AgentsGridWaitingTile: View {
     let color: Color
     let size: CGFloat
     let radius: CGFloat
-    @State private var pulse = false
 
     var body: some View {
-        RoundedRectangle(cornerRadius: radius, style: .continuous)
-            .fill(color)
-            .frame(width: size, height: size)
-            .opacity(pulse ? 1.0 : 0.35)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                    pulse = true
-                }
-            }
+        TimelineView(.animation) { timeline in
+            let wave = UnifiedBars.islandWaitingPhase(at: timeline.date)
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(color)
+                .frame(width: size, height: size)
+                .opacity(0.35 + 0.65 * wave)
+        }
     }
 }
 
