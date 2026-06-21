@@ -435,6 +435,10 @@ struct IslandPanelView: View {
             }
         }
         .padding(.bottom, 0)
+        .animation(
+            .timingCurve(0.4, 0, 0.2, 1, duration: 0.32),
+            value: model.shouldShowSessionBootstrapPlaceholder
+        )
     }
 
     /// Persistent hint at the top of the expanded island while no agent
@@ -477,19 +481,17 @@ struct IslandPanelView: View {
     private var sessionBootstrapPlaceholder: some View {
         VStack(spacing: 12) {
             Spacer()
-            ProgressView()
-                .progressViewStyle(.circular)
-                .tint(.white.opacity(0.7))
-                .scaleEffect(0.8)
+            IslandSubtleSpinner()
             Text(model.lang.t("island.checkingTerminals"))
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.58))
+                .foregroundStyle(.white.opacity(0.62))
             Text(model.lang.t("island.terminalOwnership"))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.28))
+                .foregroundStyle(.white.opacity(0.45))
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 
     private var emptyState: some View {
@@ -497,15 +499,35 @@ struct IslandPanelView: View {
             Spacer()
             Text(model.lang.t("island.noTerminals"))
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(.white.opacity(0.5))
             Text(model.recentSessions.isEmpty
                 ? model.lang.t("island.startAgent")
                 : model.lang.t("island.recentSessions"))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.25))
+                .foregroundStyle(.white.opacity(0.42))
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .background(
+            Canvas { context, size in
+                let spacing: CGFloat = 14
+                let dotSize: CGFloat = 1
+                let color = Color.white.opacity(0.04)
+                var y: CGFloat = spacing / 2
+                while y < size.height {
+                    var x: CGFloat = spacing / 2
+                    while x < size.width {
+                        context.fill(
+                            Path(ellipseIn: CGRect(x: x, y: y, width: dotSize, height: dotSize)),
+                            with: .color(color)
+                        )
+                        x += spacing
+                    }
+                    y += spacing
+                }
+            }
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 
     private var actionableSessionID: String? {
