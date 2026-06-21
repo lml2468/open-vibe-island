@@ -1664,14 +1664,15 @@ private struct IslandSessionRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(commandPreviewText)
                     .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(V6Palette.paper.opacity(0.78))
+                    .foregroundStyle(V6Palette.paper.opacity(IslandOpacity.strong))
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let path = session.permissionRequest?.affectedPath.trimmedForNotificationCard,
                    !path.isEmpty {
+                    IslandDivider()
                     Text(path)
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(V6Palette.paper.opacity(0.42))
+                        .foregroundStyle(V6Palette.paper.opacity(0.34))
                         .lineLimit(1)
                 }
             }
@@ -1680,8 +1681,8 @@ private struct IslandSessionRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(Color.white.opacity(0.045))
+                RoundedRectangle(cornerRadius: IslandRadius.sm, style: .continuous)
+                    .fill(Color.white.opacity(IslandOpacity.hairline))
             )
 
             HStack(spacing: 8) {
@@ -1700,6 +1701,12 @@ private struct IslandSessionRow: View {
                         onApprove?(.allowWithUpdates([update]))
                     }
                     .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
+                } else {
+                    // Reserve the third column so the layout doesn't reflow when
+                    // an `alwaysAllow` action isn't available — Deny / Allow Once
+                    // stay anchored at the left two thirds instead of stretching
+                    // out to fill the row.
+                    Color.clear.frame(maxWidth: .infinity)
                 }
             }
         }
