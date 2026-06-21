@@ -2449,11 +2449,32 @@ private struct StructuredQuestionPromptView: View {
 
 /// NSTextField wrapper that fires `onSubmit` only when the IME composition
 /// is finished — pressing Enter during Chinese/Japanese IME composition
-/// confirms the candidate instead of submitting.
-private struct ReplyTextField: NSViewRepresentable {
+/// confirms the candidate instead of submitting. Adds a subtle bottom border
+/// that fades in while the field holds keyboard focus.
+private struct ReplyTextField: View {
     var placeholder: String
     @Binding var text: String
     var onSubmit: () -> Void
+
+    @State private var isFocused = false
+
+    var body: some View {
+        _ReplyTextFieldRepresentable(placeholder: placeholder, text: $text, onSubmit: onSubmit, isFocused: $isFocused)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(V6Palette.paper.opacity(0.32))
+                    .frame(height: 1)
+                    .opacity(isFocused ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.18), value: isFocused)
+            }
+    }
+}
+
+private struct _ReplyTextFieldRepresentable: NSViewRepresentable {
+    var placeholder: String
+    @Binding var text: String
+    var onSubmit: () -> Void
+    @Binding var isFocused: Bool
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
@@ -2480,24 +2501,35 @@ private struct ReplyTextField: NSViewRepresentable {
             nsView.stringValue = text
         }
         context.coordinator.onSubmit = onSubmit
+        context.coordinator.isFocused = $isFocused
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text, onSubmit: onSubmit)
+        Coordinator(text: $text, onSubmit: onSubmit, isFocused: $isFocused)
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var text: Binding<String>
         var onSubmit: () -> Void
+        var isFocused: Binding<Bool>
 
-        init(text: Binding<String>, onSubmit: @escaping () -> Void) {
+        init(text: Binding<String>, onSubmit: @escaping () -> Void, isFocused: Binding<Bool>) {
             self.text = text
             self.onSubmit = onSubmit
+            self.isFocused = isFocused
         }
 
         func controlTextDidChange(_ obj: Notification) {
             guard let field = obj.object as? NSTextField else { return }
             text.wrappedValue = field.stringValue
+        }
+
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            isFocused.wrappedValue = true
+        }
+
+        func controlTextDidEndEditing(_ obj: Notification) {
+            isFocused.wrappedValue = false
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
