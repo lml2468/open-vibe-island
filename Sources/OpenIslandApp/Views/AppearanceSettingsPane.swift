@@ -14,6 +14,11 @@ struct AppearanceSettingsPane: View {
     @State private var previewMode: UnifiedBars.Mode = .idle
     @State private var previewAutoCycle: Bool = true
 
+    @State private var hoveredProfile: IslandAppearanceDisplayProfile? = nil
+    @State private var hoveredRightSlot: IslandRightSlot? = nil
+    @State private var hoveredCenterLabel: IslandCenterLabel? = nil
+    @State private var hoveredOptionKey: String? = nil
+
     private static let autoCycleOrder: [UnifiedBars.Mode] = [.idle, .running, .waiting]
     private static let autoCycleInterval: TimeInterval = 2.0
 
@@ -73,8 +78,11 @@ struct AppearanceSettingsPane: View {
         note: String
     ) -> some View {
         let selected = editingProfile == profile
+        let hovered = hoveredProfile == profile
         return Button {
-            model.appearanceSettingsProfile = profile
+            withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.32)) {
+                model.appearanceSettingsProfile = profile
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: icon)
@@ -108,14 +116,19 @@ struct AppearanceSettingsPane: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(selected ? 0.075 : 0.025))
+                    .fill(Color.white.opacity(selected ? 0.075 : (hovered ? 0.05 : 0.025)))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(selected ? V6Palette.paper.opacity(0.86) : Color.white.opacity(0.08), lineWidth: selected ? 1.5 : 1)
+                    .stroke(selected ? V6Palette.paper.opacity(0.86) : Color.white.opacity(0.08), lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.18)) {
+                hoveredProfile = hovering ? profile : nil
+            }
+        }
     }
 
     // MARK: - Notch part
@@ -181,6 +194,9 @@ struct AppearanceSettingsPane: View {
                     physicalNotchWidth: physicalNotchW,
                     now: context.date
                 )
+                .id(previewMode)
+                .transition(.opacity)
+                .animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.32), value: previewMode)
             }
         }
         .frame(height: pillHeight)
@@ -276,8 +292,11 @@ struct AppearanceSettingsPane: View {
         title: String
     ) -> some View {
         let selected = editingPreferences.rightSlot == option
+        let hovered = hoveredRightSlot == option
         return Button {
-            model.updateAppearancePreferences(for: editingProfile) { $0.rightSlot = option }
+            withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.32)) {
+                model.updateAppearancePreferences(for: editingProfile) { $0.rightSlot = option }
+            }
         } label: {
             VStack(spacing: 10) {
                 ZStack {
@@ -295,17 +314,22 @@ struct AppearanceSettingsPane: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(selected ? 0.07 : 0.02))
+                    .fill(Color.white.opacity(selected ? 0.07 : (hovered ? 0.05 : 0.02)))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(
                         selected ? V6Palette.paper.opacity(0.9) : Color.white.opacity(0.08),
-                        lineWidth: selected ? 1.5 : 1
+                        lineWidth: 1
                     )
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.18)) {
+                hoveredRightSlot = hovering ? option : nil
+            }
+        }
     }
 
     // MARK: - 02 · Center label
@@ -326,13 +350,16 @@ struct AppearanceSettingsPane: View {
 
     private func centerLabelCard(_ option: IslandCenterLabel, sample: String) -> some View {
         let selected = editingPreferences.centerLabel == option
+        let hovered = hoveredCenterLabel == option
         let title: String = switch option {
         case .agentAction: lang.t("settings.appearance.centerLabel.agentAction")
         case .sessionName: lang.t("settings.appearance.centerLabel.sessionName")
         case .off:         lang.t("settings.appearance.centerLabel.off")
         }
         return Button {
-            model.updateAppearancePreferences(for: editingProfile) { $0.centerLabel = option }
+            withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.32)) {
+                model.updateAppearancePreferences(for: editingProfile) { $0.centerLabel = option }
+            }
         } label: {
             VStack(spacing: 10) {
                 ZStack {
@@ -355,17 +382,22 @@ struct AppearanceSettingsPane: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(selected ? 0.07 : 0.02))
+                    .fill(Color.white.opacity(selected ? 0.07 : (hovered ? 0.05 : 0.02)))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(
                         selected ? V6Palette.paper.opacity(0.9) : Color.white.opacity(0.08),
-                        lineWidth: selected ? 1.5 : 1
+                        lineWidth: 1
                     )
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.18)) {
+                hoveredCenterLabel = hovering ? option : nil
+            }
+        }
     }
 
     // MARK: - 02 · Usage
@@ -380,6 +412,7 @@ struct AppearanceSettingsPane: View {
         HStack(spacing: 12) {
             ForEach(IslandUsageDisplay.allCases) { option in
                 optionCard(
+                    key: "usage.\(option.id)",
                     selected: editingPreferences.usageDisplay == option,
                     title: title(for: option)
                 ) {
@@ -410,6 +443,7 @@ struct AppearanceSettingsPane: View {
 
     private func stateIndicatorCard(_ option: IslandSessionStateIndicator) -> some View {
         optionCard(
+            key: "indicator.\(option)",
             selected: editingPreferences.sessionStateIndicator == option,
             title: title(for: option)
         ) {
@@ -431,6 +465,7 @@ struct AppearanceSettingsPane: View {
         HStack(spacing: 12) {
             ForEach(IslandSessionGroup.allCases) { option in
                 optionCard(
+                    key: "group.\(option.id)",
                     selected: editingPreferences.sessionGroup == option,
                     title: title(for: option)
                 ) {
@@ -454,6 +489,7 @@ struct AppearanceSettingsPane: View {
         HStack(spacing: 12) {
             ForEach(IslandSessionSort.allCases) { option in
                 optionCard(
+                    key: "sort.\(option.id)",
                     selected: editingPreferences.sessionSort == option,
                     title: title(for: option)
                 ) {
@@ -481,6 +517,7 @@ struct AppearanceSettingsPane: View {
         ) {
             ForEach(IslandCompletedStaleThreshold.allCases) { option in
                 optionCard(
+                    key: "stale.\(option.id)",
                     selected: editingPreferences.completedStaleThreshold == option,
                     title: title(for: option)
                 ) {
@@ -503,12 +540,18 @@ struct AppearanceSettingsPane: View {
     }
 
     private func optionCard<Icon: View>(
+        key: String,
         selected: Bool,
         title: String,
         action: @escaping () -> Void,
         @ViewBuilder icon: () -> Icon
     ) -> some View {
-        Button(action: action) {
+        let hovered = hoveredOptionKey == key
+        return Button {
+            withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.32)) {
+                action()
+            }
+        } label: {
             VStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -527,17 +570,22 @@ struct AppearanceSettingsPane: View {
             .frame(maxWidth: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(selected ? 0.07 : 0.02))
+                    .fill(Color.white.opacity(selected ? 0.07 : (hovered ? 0.05 : 0.02)))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(
                         selected ? V6Palette.paper.opacity(0.9) : Color.white.opacity(0.08),
-                        lineWidth: selected ? 1.5 : 1
+                        lineWidth: 1
                     )
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.18)) {
+                hoveredOptionKey = hovering ? key : nil
+            }
+        }
     }
 
     private func sectionHeader(title: String, note: String?) -> some View {
@@ -720,7 +768,7 @@ struct AppearanceSettingsPane: View {
                 detail: lang.t("settings.appearance.preview.approveShellCommand"),
                 agent: "Codex",
                 agentShort: "codex",
-                agentColor: Color(hex: AgentTool.codex.brandColorHex) ?? Color(red: 0.55, green: 0.72, blue: 1.0),
+                agentColor: Color(hex: AgentTool.codex.brandColorHex) ?? BrandPalette.codexDefault,
                 project: "open-island",
                 branch: "v8-design",
                 prompt: lang.t("settings.appearance.preview.promptImplementPlan"),
@@ -736,7 +784,7 @@ struct AppearanceSettingsPane: View {
                 detail: lang.t("settings.appearance.preview.waitingForAnswer"),
                 agent: "Claude",
                 agentShort: "claude",
-                agentColor: Color(hex: AgentTool.claudeCode.brandColorHex) ?? Color(red: 0.9, green: 0.55, blue: 0.34),
+                agentColor: Color(hex: AgentTool.claudeCode.brandColorHex) ?? BrandPalette.claudeCodeDefault,
                 project: "open-island",
                 branch: "main",
                 prompt: lang.t("settings.appearance.preview.promptChooseNotificationCopy"),
@@ -752,7 +800,7 @@ struct AppearanceSettingsPane: View {
                 detail: lang.t("settings.appearance.preview.editingSessionListPreview"),
                 agent: "Cursor",
                 agentShort: "cursor",
-                agentColor: Color(hex: AgentTool.cursor.brandColorHex) ?? Color(red: 0.62, green: 0.66, blue: 1.0),
+                agentColor: Color(hex: AgentTool.cursor.brandColorHex) ?? BrandPalette.cursorDefault,
                 project: "website",
                 branch: "main",
                 prompt: lang.t("settings.appearance.preview.promptTightenSettingsUI"),
@@ -768,7 +816,7 @@ struct AppearanceSettingsPane: View {
                 detail: lang.t("settings.appearance.preview.replyAvailable"),
                 agent: "Gemini",
                 agentShort: "gemini",
-                agentColor: Color(hex: AgentTool.geminiCLI.brandColorHex) ?? Color(red: 0.45, green: 0.78, blue: 1.0),
+                agentColor: Color(hex: AgentTool.geminiCLI.brandColorHex) ?? BrandPalette.geminiCLIDefault,
                 project: "docs",
                 branch: "main",
                 prompt: lang.t("settings.appearance.preview.promptSummarizeDesignBundle"),
