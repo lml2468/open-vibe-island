@@ -48,8 +48,53 @@ final class ProcessMonitoringCoordinator {
     @ObservationIgnored
     private var wasCodexAppRunning = false
 
+    private static let startupPollInterval: TimeInterval = 2
+    private static let codexAppRunningProbeInterval: TimeInterval = 2
+    private static let activePollInterval: TimeInterval = 60
+    private static let idlePollInterval: TimeInterval = 300
     private static let cursorStalenessTimeout: TimeInterval = 600  // 10 minutes
     private static let codexAppStalenessTimeout: TimeInterval = 600  // 10 minutes
+    private static let claudeDesktopStalenessTimeout: TimeInterval = 600  // 10 minutes
+
+    static func monitoringPollInterval(
+        isResolvingInitialLiveSessions: Bool,
+        hasTrackedLiveSessions: Bool
+    ) -> TimeInterval {
+        if isResolvingInitialLiveSessions {
+            return startupPollInterval
+        }
+
+        return hasTrackedLiveSessions ? activePollInterval : idlePollInterval
+    }
+
+    static func monitoringWakeInterval(
+        isResolvingInitialLiveSessions: Bool,
+        hasTrackedLiveSessions: Bool
+    ) -> TimeInterval {
+        min(
+            codexAppRunningProbeInterval,
+            monitoringPollInterval(
+                isResolvingInitialLiveSessions: isResolvingInitialLiveSessions,
+                hasTrackedLiveSessions: hasTrackedLiveSessions
+            )
+        )
+    }
+
+    static func shouldPerformFullMonitorReconcile(
+        now: Date,
+        nextFullReconcileAt: Date,
+        isResolvingInitialLiveSessions: Bool,
+        hasTrackedLiveSessions: Bool,
+        hadTrackedLiveSessions: Bool
+    ) -> Bool {
+        if isResolvingInitialLiveSessions {
+            return true
+        }
+        if hasTrackedLiveSessions, !hadTrackedLiveSessions {
+            return true
+        }
+        return now >= nextFullReconcileAt
+    }
 
     private var state: SessionState {
         get { stateAccessor?() ?? SessionState() }
@@ -68,32 +113,86 @@ final class ProcessMonitoringCoordinator {
                 return
             }
 
+            var nextFullReconcileAt = Date.distantPast
+            var hadTrackedLiveSessions = false
+
             while !Task.isCancelled {
-                let discovery = self.activeAgentProcessDiscovery
-                let probe = self.terminalSessionAttachmentProbe
-                let resolver = self.terminalJumpTargetResolver
                 let liveSessions = self.state.sessions.filter(\.isTrackedLiveSession)
-                let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .utility) {
-                    let s = discovery.discover()
-                    let g = probe.ghosttySnapshotAvailability()
-                    let t = probe.terminalSnapshotAvailability()
-                    let j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
-                    return (s, g, t, j)
-                }.value
-                let isCodexAppRunning = Self.isCodexDesktopAppRunning()
-                self.reconcileSessionAttachments(
-                    activeProcesses: snapshots,
-                    ghosttyAvailability: ghosttyAvail,
-                    terminalAvailability: terminalAvail,
-                    preResolvedJumpTargets: jumpTargets,
-                    observedCodexAppRunning: isCodexAppRunning
+                let hasTrackedLiveSessions = !liveSessions.isEmpty
+                let shouldRunFullReconcile = Self.shouldPerformFullMonitorReconcile(
+                    now: Date(),
+                    nextFullReconcileAt: nextFullReconcileAt,
+                    isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
+                    hasTrackedLiveSessions: hasTrackedLiveSessions,
+                    hadTrackedLiveSessions: hadTrackedLiveSessions
                 )
-                if isCodexAppRunning {
-                    self.onCodexAppMaintenanceTick?()
+
+                if shouldRunFullReconcile {
+                    let discovery = self.activeAgentProcessDiscovery
+                    let probe = self.terminalSessionAttachmentProbe
+                    let resolver = self.terminalJumpTargetResolver
+                    let shouldResolveTerminals = hasTrackedLiveSessions
+                    let (snapshots, ghosttyAvail, terminalAvail, jumpTargets) = await Task.detached(priority: .utility) {
+                        let s = discovery.discover()
+                        let g: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot>
+                        let t: TerminalSessionAttachmentProbe.SnapshotAvailability<TerminalSessionAttachmentProbe.TerminalTabSnapshot>
+                        let j: [String: JumpTarget]
+
+                        if shouldResolveTerminals {
+                            g = probe.ghosttySnapshotAvailability()
+                            t = probe.terminalSnapshotAvailability()
+                            j = resolver.resolveJumpTargets(for: liveSessions, activeProcesses: s)
+                        } else {
+                            g = .available([], appIsRunning: false)
+                            t = .available([], appIsRunning: false)
+                            j = [:]
+                        }
+
+                        return (s, g, t, j)
+                    }.value
+                    let isCodexAppRunning = Self.isCodexDesktopAppRunning()
+                    self.reconcileSessionAttachments(
+                        activeProcesses: snapshots,
+                        ghosttyAvailability: ghosttyAvail,
+                        terminalAvailability: terminalAvail,
+                        preResolvedJumpTargets: jumpTargets,
+                        observedCodexAppRunning: isCodexAppRunning
+                    )
+                    if isCodexAppRunning {
+                        self.onCodexAppMaintenanceTick?()
+                    }
+
+                    let pollInterval = Self.monitoringPollInterval(
+                        isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
+                        hasTrackedLiveSessions: self.state.sessions.contains(where: \.isTrackedLiveSession)
+                    )
+                    nextFullReconcileAt = Date().addingTimeInterval(pollInterval)
+                    hadTrackedLiveSessions = self.state.sessions.contains(where: \.isTrackedLiveSession)
+                } else {
+                    let isCodexAppRunning = self.reconcileCodexAppRunningState()
+                    if isCodexAppRunning {
+                        self.onCodexAppMaintenanceTick?()
+                    }
+                    hadTrackedLiveSessions = hasTrackedLiveSessions
                 }
-                try? await Task.sleep(for: .seconds(2))
+
+                let wakeInterval = Self.monitoringWakeInterval(
+                    isResolvingInitialLiveSessions: self.isResolvingInitialLiveSessions,
+                    hasTrackedLiveSessions: self.state.sessions.contains(where: \.isTrackedLiveSession)
+                )
+                try? await Task.sleep(for: .milliseconds(Int(wakeInterval * 1_000)))
             }
         }
+    }
+
+    @discardableResult
+    private func reconcileCodexAppRunningState(_ observedCodexAppRunning: Bool? = nil) -> Bool {
+        let isCodexAppRunning = observedCodexAppRunning ?? Self.isCodexDesktopAppRunning()
+        if isCodexAppRunning != wasCodexAppRunning {
+            wasCodexAppRunning = isCodexAppRunning
+            onCodexAppRunningChanged?(isCodexAppRunning)
+        }
+        return isCodexAppRunning
     }
 
     // MARK: - Reconciliation
@@ -132,11 +231,7 @@ final class ProcessMonitoringCoordinator {
         // return — we need to fire the callback on a brand-new Codex.app
         // launch even when no sessions exist yet, so the app-server
         // coordinator can connect and report threads.
-        let isCodexAppRunning = observedCodexAppRunning ?? Self.isCodexDesktopAppRunning()
-        if isCodexAppRunning != wasCodexAppRunning {
-            wasCodexAppRunning = isCodexAppRunning
-            onCodexAppRunningChanged?(isCodexAppRunning)
-        }
+        let isCodexAppRunning = reconcileCodexAppRunningState(observedCodexAppRunning)
         let sessions = local.sessions.filter(\.isTrackedLiveSession)
         guard !sessions.isEmpty else {
             // Flush local changes only if something actually changed.
@@ -423,6 +518,30 @@ final class ProcessMonitoringCoordinator {
                 if session.isSessionEnded { continue }
                 let isStale = session.phase == .completed
                     && session.updatedAt.addingTimeInterval(Self.cursorStalenessTimeout) < Date.now
+                if !isStale {
+                    aliveIDs.insert(session.id)
+                }
+            }
+        }
+
+        // Claude Desktop sessions: Claude Code launched by Claude.app ("local
+        // agent mode") runs as a TTY-less subprocess that ps/lsof discovery
+        // never sees, so the hook-managed liveness fallback in
+        // SessionState.markProcessLiveness would evict these sessions ~6s after
+        // they appear (#510).  Keep them alive while Claude.app is running, but
+        // let completed sessions expire after a staleness window — Claude
+        // Desktop has no per-conversation "closed" signal beyond the SessionEnd
+        // hook (mirrors the Cursor handling above).  The session is identified
+        // by the "Claude.app" terminalApp tag stamped by the hook.
+        let isClaudeDesktopRunning = Self.isClaudeDesktopAppRunning()
+        if isClaudeDesktopRunning {
+            for session in sessions
+            where session.tool == .claudeCode
+                && !session.isDemoSession
+                && session.jumpTarget?.terminalApp == "Claude.app" {
+                if session.isSessionEnded { continue }
+                let isStale = session.phase == .completed
+                    && session.updatedAt.addingTimeInterval(Self.claudeDesktopStalenessTimeout) < Date.now
                 if !isStale {
                     aliveIDs.insert(session.id)
                 }
@@ -887,6 +1006,18 @@ final class ProcessMonitoringCoordinator {
     static func isCodexDesktopAppRunning() -> Bool {
         NSWorkspace.shared.runningApplications.contains { app in
             app.bundleIdentifier == "com.openai.codex"
+        }
+    }
+
+    /// Check whether the Claude desktop app is currently running.  Uses
+    /// `NSWorkspace.shared.runningApplications` for the same reason as
+    /// ``isCodexDesktopAppRunning()`` — the
+    /// `NSRunningApplication.runningApplications(withBundleIdentifier:)` API
+    /// can transiently return an empty array even while the app is running,
+    /// which would flicker visible Claude Desktop sessions out of the island.
+    static func isClaudeDesktopAppRunning() -> Bool {
+        NSWorkspace.shared.runningApplications.contains { app in
+            app.bundleIdentifier == "com.anthropic.claudefordesktop"
         }
     }
 
