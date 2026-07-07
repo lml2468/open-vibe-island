@@ -136,6 +136,16 @@ public final class BridgeServer: @unchecked Sendable {
                 }
             }
 
+            // Restrict the socket node to the owning user only (0600). The
+            // control socket accepts privileged commands (resolvePermission /
+            // answerQuestion / process*Hook); a peer connecting over it can
+            // approve or deny an agent's tool use. Combined with the peer-uid
+            // check on accept, this keeps the bridge same-user only — the legacy
+            // /tmp socket in particular is otherwise world-traversable.
+            guard chmod(url.path, S_IRUSR | S_IWUSR) != -1 else {
+                throw BridgeTransportError.systemCallFailed("chmod", errno)
+            }
+
             guard listen(fd, 16) != -1 else {
                 throw BridgeTransportError.systemCallFailed("listen", errno)
             }
@@ -212,6 +222,14 @@ public final class BridgeServer: @unchecked Sendable {
                 }
 
                 return
+            }
+
+            // Default-deny: only accept peers running as the same user. The
+            // control socket carries privileged commands, so a different-uid
+            // (or indeterminate) peer must never be serviced.
+            guard isTrustedLocalPeer(clientFileDescriptor) else {
+                close(clientFileDescriptor)
+                continue
             }
 
             do {

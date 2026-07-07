@@ -42,6 +42,8 @@ public enum BridgeTransportError: Error, LocalizedError {
     case malformedEnvelope
     case frameTooLarge
     case responseTimedOut
+    case writeTimedOut
+    case unknownMessageType(String)
     case listenerFailed(String)
     case socketPathTooLong
     case systemCallFailed(String, Int32)
@@ -58,6 +60,10 @@ public enum BridgeTransportError: Error, LocalizedError {
             "The bridge transport received a frame exceeding the maximum size."
         case .responseTimedOut:
             "The local bridge timed out while waiting for a response."
+        case .writeTimedOut:
+            "The local bridge timed out while writing to a peer that stopped draining."
+        case let .unknownMessageType(type):
+            "The bridge transport received an unknown message type: \(type)."
         case let .listenerFailed(message):
             "The local bridge listener failed: \(message)"
         case .socketPathTooLong:
@@ -121,7 +127,10 @@ public enum BridgeCommand: Equatable, Codable, Sendable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(CommandType.self, forKey: .type)
+        let rawType = try container.decode(String.self, forKey: .type)
+        guard let type = CommandType(rawValue: rawType) else {
+            throw BridgeTransportError.unknownMessageType(rawType)
+        }
 
         switch type {
         case .registerClient:
@@ -214,7 +223,10 @@ public enum BridgeResponse: Equatable, Codable, Sendable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(ResponseType.self, forKey: .type)
+        let rawType = try container.decode(String.self, forKey: .type)
+        guard let type = ResponseType(rawValue: rawType) else {
+            throw BridgeTransportError.unknownMessageType(rawType)
+        }
 
         switch type {
         case .acknowledged:
@@ -275,7 +287,10 @@ public enum BridgeEnvelope: Equatable, Codable, Sendable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(EnvelopeType.self, forKey: .type)
+        let rawType = try container.decode(String.self, forKey: .type)
+        guard let type = EnvelopeType(rawValue: rawType) else {
+            throw BridgeTransportError.unknownMessageType(rawType)
+        }
 
         switch type {
         case .hello:
@@ -347,6 +362,16 @@ public enum BridgeCodec {
             do {
                 let message = try decoder.decode(BridgeEnvelope.self, from: Data(line))
                 messages.append(message)
+            } catch let error as BridgeTransportError {
+                // Forward compatibility: a frame whose message/event type is
+                // unknown (a newer peer's addition) is skipped, not fatal — one
+                // unknown envelope must never kill the NDJSON stream or force a
+                // reconnect. Any other transport error (e.g. genuinely malformed
+                // JSON) is still surfaced.
+                if case .unknownMessageType = error {
+                    continue
+                }
+                throw error
             } catch {
                 throw BridgeTransportError.malformedEnvelope
             }
@@ -422,8 +447,43 @@ func disableSocketSigPipe(_ fileDescriptor: Int32) throws {
     }
 }
 
-func writeAll(_ data: Data, to fileDescriptor: Int32) throws {
+/// The effective uid of the process on the other end of a connected `AF_UNIX`
+/// socket, or `nil` if it cannot be determined. Used to enforce a same-user
+/// trust boundary on the control socket.
+func peerEffectiveUID(of fileDescriptor: Int32) -> uid_t? {
+    var uid = uid_t()
+    var gid = gid_t()
+    guard getpeereid(fileDescriptor, &uid, &gid) == 0 else {
+        return nil
+    }
+    return uid
+}
+
+/// Whether a connecting peer should be trusted on the control socket.
+/// Default-deny: the peer is accepted only when its effective uid can be
+/// determined AND matches `expectedUID`. An indeterminate peer is rejected.
+func isTrustedLocalPeer(_ fileDescriptor: Int32, expectedUID: uid_t = getuid()) -> Bool {
+    guard let uid = peerEffectiveUID(of: fileDescriptor) else {
+        return false
+    }
+    return uid == expectedUID
+}
+
+/// Default upper bound on how long a single `writeAll` may spend waiting for a
+/// peer to drain its receive buffer. All server writes run on one serial queue,
+/// so a peer that connects but never reads would otherwise wedge the entire
+/// bridge (every client, every hook dispatch). On timeout `writeAll` throws so
+/// the caller can drop that one peer instead of hanging the whole server.
+public let bridgeWriteTimeout: TimeInterval = 5.0
+
+func writeAll(
+    _ data: Data,
+    to fileDescriptor: Int32,
+    timeout: TimeInterval = bridgeWriteTimeout
+) throws {
     var remaining = data[...]
+    // Monotonic deadline: unaffected by wall-clock changes (NTP, DST).
+    let deadline = DispatchTime.now() + timeout
 
     while !remaining.isEmpty {
         let bytesWritten = remaining.withUnsafeBytes { rawBuffer -> Int in
@@ -437,6 +497,11 @@ func writeAll(_ data: Data, to fileDescriptor: Int32) throws {
         }
 
         if bytesWritten == -1 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+            // Enforce the deadline before sleeping again so a peer that never
+            // (or only slowly) drains cannot spin here forever.
+            guard DispatchTime.now() < deadline else {
+                throw BridgeTransportError.writeTimedOut
+            }
             usleep(1_000)
             continue
         }
