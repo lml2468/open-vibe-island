@@ -1,0 +1,47 @@
+name: DESIGN.md lint
+
+on:
+  pull_request:
+    paths:
+      - "DESIGN.md"
+      - ".github/workflows/design-lint.yml"
+  push:
+    branches:
+      - main
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
+      - "refactor/**"
+      - "chore/**"
+      - "investigate/**"
+    paths:
+      - "DESIGN.md"
+      - ".github/workflows/design-lint.yml"
+
+jobs:
+  design-md:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Lint DESIGN.md (fail on any warning or error)
+        run: |
+          set -euo pipefail
+          # design.md's CLI exits 0 even with warnings; enforce a strict gate by
+          # parsing its JSON and failing on any warning/error finding. `info` is
+          # the token-summary line and is allowed.
+          npx --yes @google/design.md@0.3.0 lint DESIGN.md --format=json | tee design-lint.json
+          node -e '
+            const r = require("./design-lint.json");
+            const bad = (r.findings || []).filter(f => f.severity === "warning" || f.severity === "error");
+            if (bad.length) {
+              console.error(`\nDESIGN.md lint failed: ${bad.length} warning/error finding(s):`);
+              for (const f of bad) console.error(`  [${f.severity}] ${f.path || "-"}: ${f.message}`);
+              process.exit(1);
+            }
+            console.log("DESIGN.md lint clean (no warnings or errors).");
+          '

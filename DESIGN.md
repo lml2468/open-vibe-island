@@ -10,6 +10,9 @@ colors:
   # Core ink-on-paper (V6ClosedPillShape.swift · V6Palette)
   ink: "#0d0d0f"
   paper: "#f1ead9"
+  # Primary accent = the dominant "active" status tint (running). Open Island has
+  # no web-style brand primary; running blue is the app's key accent.
+  primary: "{colors.running}"
   # Semantic status tints (IslandDesignPalette.Status)
   running: "#6ea7ff"
   completed: "#6fb982"
@@ -93,6 +96,29 @@ components:
     backgroundColor: "{colors.running}"
     rounded: "{rounded.pill}"
     size: 6px
+  # Per-state variants of the indicator dot — its fill is the session's status
+  # tint (IslandDesignPalette.Status.tint(for:)). One entry per SessionPhase.
+  statusIndicatorRunning:
+    backgroundColor: "{colors.running}"
+    rounded: "{rounded.pill}"
+    size: 6px
+  statusIndicatorCompleted:
+    backgroundColor: "{colors.completed}"
+    rounded: "{rounded.pill}"
+    size: 6px
+  statusIndicatorWaitingForApproval:
+    backgroundColor: "{colors.waitingForApproval}"
+    rounded: "{rounded.pill}"
+    size: 6px
+  statusIndicatorWaitingForAnswer:
+    backgroundColor: "{colors.waitingForAnswer}"
+    rounded: "{rounded.pill}"
+    size: 6px
+  # Collapsed-pill roll-up tint when several sessions are summarized.
+  statusIndicatorWaitingAggregate:
+    backgroundColor: "{colors.waitingAggregate}"
+    rounded: "{rounded.pill}"
+    size: 6px
   sessionRow:
     backgroundColor: "{colors.ink}"
     textColor: "{colors.paper}"
@@ -105,6 +131,24 @@ components:
     typography: "{typography.body}"
     rounded: "{rounded.lg}"
     padding: "{spacing.xl}"
+  # Appearance-preview tiles — the fallback swatch shown for an agent when it
+  # supplies no brandColorHex (BrandPalette). One entry per known agent.
+  agentTileCodex:
+    backgroundColor: "{colors.brandCodex}"
+    rounded: "{rounded.sm}"
+    size: 16px
+  agentTileClaudeCode:
+    backgroundColor: "{colors.brandClaudeCode}"
+    rounded: "{rounded.sm}"
+    size: 16px
+  agentTileCursor:
+    backgroundColor: "{colors.brandCursor}"
+    rounded: "{rounded.sm}"
+    size: 16px
+  agentTileGemini:
+    backgroundColor: "{colors.brandGemini}"
+    rounded: "{rounded.sm}"
+    size: 16px
 ---
 
 # Open Island — DESIGN.md
@@ -220,12 +264,23 @@ above:
   in `paper`, so digits stay aligned as the count changes.
 - **statusIndicator** — a 6px dot whose fill is the session's status tint
   (`running` shown as the default). The dot *is* the status signal; do not also
-  recolor the surrounding text.
+  recolor the surrounding text. Its per-state variants —
+  **statusIndicatorRunning / Completed / WaitingForApproval / WaitingForAnswer**,
+  plus **statusIndicatorWaitingAggregate** for the collapsed roll-up — are the
+  same dot resolved to each `SessionPhase`'s tint
+  (`IslandDesignPalette.Status.tint(for:)`).
 - **sessionRow** — a row in the expanded panel: `ink` surface, `paper` text,
   `body` type, `md` radius, `lg` padding. The status tint appears only on the
   row's indicator, not its background.
 - **settingsCard** — a card in Settings/Appearance: same ink-on-paper, larger
   `lg` radius and `xl` padding for a calmer, less dense context.
+- **agentTile{Codex,ClaudeCode,Cursor,Gemini}** — the appearance-preview swatch
+  for an agent, filled with that agent's `brand*` default. These are *fallbacks*:
+  render an agent's own `brandColorHex` when it supplies one, and only fall back
+  to these so the preview is never colorless.
+
+`primary` is an alias for `running` — Open Island's key accent is the active-state
+blue, not a separate brand hue. There is deliberately no additional primary color.
 
 Variants (hover, pressed, selected) are expressed by moving along the **opacity**
 and **motion** ladders, not by introducing new colors: a hover is a `faint`
