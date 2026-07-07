@@ -432,10 +432,6 @@ struct IslandPanelView: View {
             }
         }
         .padding(.bottom, 0)
-        .animation(
-            .timingCurve(0.4, 0, 0.2, 1, duration: 0.32),
-            value: model.shouldShowSessionBootstrapPlaceholder
-        )
     }
 
     /// Persistent hint at the top of the expanded island while no agent
@@ -478,17 +474,19 @@ struct IslandPanelView: View {
     private var sessionBootstrapPlaceholder: some View {
         VStack(spacing: 12) {
             Spacer()
-            IslandSubtleSpinner()
+            ProgressView()
+                .progressViewStyle(.circular)
+                .tint(.white.opacity(0.7))
+                .scaleEffect(0.8)
             Text(model.lang.t("island.checkingTerminals"))
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.62))
+                .foregroundStyle(.white.opacity(0.58))
             Text(model.lang.t("island.terminalOwnership"))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.45))
+                .foregroundStyle(.white.opacity(0.28))
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 
     private var emptyState: some View {
@@ -496,35 +494,15 @@ struct IslandPanelView: View {
             Spacer()
             Text(model.lang.t("island.noTerminals"))
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.white.opacity(0.5))
+                .foregroundStyle(.white.opacity(0.4))
             Text(model.recentSessions.isEmpty
                 ? model.lang.t("island.startAgent")
                 : model.lang.t("island.recentSessions"))
                 .font(.system(size: 12))
-                .foregroundStyle(.white.opacity(0.42))
+                .foregroundStyle(.white.opacity(0.25))
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        .background(
-            Canvas { context, size in
-                let spacing: CGFloat = 14
-                let dotSize: CGFloat = 1
-                let color = Color.white.opacity(0.04)
-                var y: CGFloat = spacing / 2
-                while y < size.height {
-                    var x: CGFloat = spacing / 2
-                    while x < size.width {
-                        context.fill(
-                            Path(ellipseIn: CGRect(x: x, y: y, width: dotSize, height: dotSize)),
-                            with: .color(color)
-                        )
-                        x += spacing
-                    }
-                    y += spacing
-                }
-            }
-        )
-        .transition(.opacity.combined(with: .scale(scale: 0.98)))
     }
 
     private var actionableSessionID: String? {
@@ -729,7 +707,9 @@ struct IslandPanelView: View {
         .padding(.trailing, sessionListSideInset)
         .frame(height: 36)
         .overlay(alignment: .bottom) {
-            IslandDivider()
+            Rectangle()
+                .fill(.white.opacity(0.055))
+                .frame(height: 1)
         }
     }
 
@@ -737,7 +717,9 @@ struct IslandPanelView: View {
         Color.clear
             .frame(height: 10)
         .overlay(alignment: .top) {
-            IslandDivider()
+            Rectangle()
+                .fill(.white.opacity(0.055))
+                .frame(height: 1)
         }
     }
 
@@ -827,7 +809,9 @@ struct IslandPanelView: View {
         .padding(.bottom, 7)
         .background(Color.white.opacity(0.008))
         .overlay(alignment: .top) {
-            IslandDivider()
+            Rectangle()
+                .fill(.white.opacity(0.055))
+                .frame(height: 1)
         }
     }
 
@@ -1263,13 +1247,12 @@ private struct IslandSessionRow: View {
                     .frame(width: 3)
                     .padding(.vertical, showsDetail ? 10 : 8)
                     .padding(.leading, 14)
-                    .animation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.32), value: presence)
             }
         }
         .opacity(isStaleCompleted ? 0.7 : 1)
         .modifier(ConditionalDrawingGroup(enabled: useDrawingGroup && !isActionable))
         .contentShape(Rectangle())
-        .animation(.easeInOut(duration: 0.18), value: isHighlighted)
+        .animation(.easeInOut(duration: 0.15), value: isHighlighted)
         .onTapGesture(perform: handlePrimaryTap)
         .onHover { hovering in
             guard isInteractive, allowsRowHoverHighlight else { return }
@@ -1330,7 +1313,6 @@ private struct IslandSessionRow: View {
         .padding(.trailing, sideInset)
         .padding(.top, 11)
         .padding(.bottom, showsDetail ? 8 : 11)
-        .animation(.easeInOut(duration: 0.18), value: stateIndicator)
     }
 
     @ViewBuilder
@@ -1662,14 +1644,19 @@ private struct IslandSessionRow: View {
                 .foregroundStyle(V6Palette.paper.opacity(0.86))
 
             VStack(alignment: .leading, spacing: 8) {
+                let trimmedPath = session.permissionRequest?.affectedPath.trimmedForNotificationCard
+                let hasPath = !(trimmedPath ?? "").isEmpty
+
                 Text(commandPreviewText)
                     .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
                     .foregroundStyle(V6Palette.paper.opacity(IslandOpacity.strong))
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let path = session.permissionRequest?.affectedPath.trimmedForNotificationCard,
-                   !path.isEmpty {
-                    IslandDivider()
+                if hasPath, let path = trimmedPath {
+                    Rectangle()
+                        .fill(Color.white.opacity(IslandOpacity.hairline))
+                        .frame(height: 1)
+
                     Text(path)
                         .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(V6Palette.paper.opacity(0.34))
@@ -1688,8 +1675,10 @@ private struct IslandSessionRow: View {
             HStack(spacing: 8) {
                 Button(session.permissionRequest?.secondaryActionTitle ?? lang.t("approval.deny")) { onApprove?(.deny) }
                     .buttonStyle(IslandActionButtonStyle(kind: .secondary, expands: true))
+                    .frame(maxWidth: .infinity)
                 Button(session.permissionRequest?.primaryActionTitle ?? lang.t("approval.allowOnce")) { onApprove?(.allowOnce) }
                     .buttonStyle(IslandActionButtonStyle(kind: .warning, expands: true))
+                    .frame(maxWidth: .infinity)
                 if let toolName = session.permissionRequest?.toolName {
                     Button(lang.t("approval.alwaysAllow", toolName)) {
                         let rule = ClaudePermissionRuleValue(toolName: toolName)
@@ -1701,12 +1690,11 @@ private struct IslandSessionRow: View {
                         onApprove?(.allowWithUpdates([update]))
                     }
                     .buttonStyle(IslandActionButtonStyle(kind: .primary, expands: true))
+                    .frame(maxWidth: .infinity)
                 } else {
-                    // Reserve the third column so the layout doesn't reflow when
-                    // an `alwaysAllow` action isn't available — Deny / Allow Once
-                    // stay anchored at the left two thirds instead of stretching
-                    // out to fill the row.
-                    Color.clear.frame(maxWidth: .infinity)
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 0)
                 }
             }
         }
@@ -1907,9 +1895,8 @@ private struct IslandSessionRow: View {
                     .fill(tint)
                     .frame(width: 9, height: 9)
                     .scaleEffect(1 + (pulse * 0.18))
-                    .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 2.5 + (pulse * 3))
+                    .shadow(color: tint.opacity(presence == .inactive ? 0 : 0.36 + (pulse * 0.26)), radius: 4 + (pulse * 3))
                     .padding(.top, 6)
-                    .animation(.easeInOut(duration: 0.18), value: presence)
             }
             .frame(width: 10, height: 24, alignment: .top)
         case .bar:
@@ -2004,8 +1991,6 @@ private struct IslandSessionRow: View {
                 )
                 .rotationEffect(.degrees(isOpen ? 180 : 0))
                 .contentShape(Rectangle())
-                .animation(.easeInOut(duration: 0.18), value: isOpen)
-                .animation(.easeInOut(duration: 0.18), value: isHighlighted)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isOpen ? "Collapse session detail" : "Expand session detail")
@@ -2184,12 +2169,11 @@ private struct StructuredQuestionPromptView: View {
 
                     Spacer(minLength: 0)
 
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(IslandDesignPalette.Status.completed)
-                        .opacity(isSelected ? 1 : 0)
-                        .scaleEffect(isSelected ? 1 : 0.7)
-                        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isSelected)
+                    if isSelected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(IslandDesignPalette.Status.completed)
+                    }
                 }
                 .contentShape(Rectangle())
                 .padding(.vertical, 5)
@@ -2198,10 +2182,8 @@ private struct StructuredQuestionPromptView: View {
             .buttonStyle(.plain)
 
             if showsFreeform {
-                Rectangle()
-                    .fill(Color.white.opacity(0.045))
-                    .frame(height: 1)
-                    .padding(.vertical, 6)
+                Divider()
+                    .overlay(Color.white.opacity(0.08))
                 freeformField(for: option, question: question)
             }
         }
@@ -2214,7 +2196,7 @@ private struct StructuredQuestionPromptView: View {
                 .strokeBorder(optionStrokeColor(isSelected: isSelected, isHovered: isHovered))
         )
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.18)) {
+            withAnimation(.easeInOut(duration: 0.12)) {
                 hoveredOptionKey = hovering ? key : (hoveredOptionKey == key ? nil : hoveredOptionKey)
             }
         }
@@ -2595,8 +2577,6 @@ private struct IslandCompactButtonStyle: ButtonStyle {
                 in: Capsule()
             )
             .opacity(configuration.isPressed ? 0.7 : 1)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .animation(IslandMotion.bouncySpring, value: configuration.isPressed)
     }
 }
 
@@ -2613,37 +2593,33 @@ private struct IslandActionButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-        let shadow = shadowStyle(isPressed: configuration.isPressed)
-        return configuration.label
+        configuration.label
             .font(.system(size: 11.8, weight: .semibold))
             .foregroundStyle(foregroundColor)
             .lineLimit(1)
             .frame(maxWidth: expands ? .infinity : nil)
             .padding(.horizontal, 13)
             .padding(.vertical, 8)
-            .background(backgroundColor(configuration.isPressed), in: shape)
+            .background(backgroundColor(configuration.isPressed), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
-                shape.strokeBorder(strokeColor, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(strokeColor, lineWidth: 1)
             )
             .opacity(configuration.isPressed ? 0.82 : 1)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .shadow(color: shadow.color, radius: shadow.radius, x: shadow.x, y: shadow.y)
-            .animation(IslandMotion.bouncySpring, value: configuration.isPressed)
     }
 
     private var foregroundColor: Color {
         guard isEnabled else {
-            return V6Palette.paper.opacity(IslandOpacity.muted)
+            return V6Palette.paper.opacity(0.42)
         }
 
         switch kind {
         case .primary:
-            return .black.opacity(IslandOpacity.strong)
+            return .black.opacity(0.88)
         case .warning:
             return .white
         case .secondary:
-            return V6Palette.paper.opacity(IslandOpacity.soft)
+            return V6Palette.paper.opacity(0.78)
         }
     }
 
@@ -2675,22 +2651,6 @@ private struct IslandActionButtonStyle: ButtonStyle {
             return Color(red: 0.85, green: 0.55, blue: 0.15).opacity(pressedFactor)
         case .secondary:
             return Color.white.opacity(isPressed ? 0.11 : 0.065)
-        }
-    }
-
-    /// Lift only the prominent kinds. `.secondary` stays flat to read as a
-    /// chrome-style affordance. On press the shadow softens so the button
-    /// reads as pushed-down.
-    private func shadowStyle(isPressed: Bool) -> IslandShadowStyle {
-        guard isEnabled else {
-            return IslandShadowStyle(color: .clear, radius: 0, x: 0, y: 0)
-        }
-        switch kind {
-        case .primary, .warning:
-            let opacity = isPressed ? 0.08 : 0.18
-            return IslandShadowStyle(color: .black.opacity(opacity), radius: 4, x: 0, y: 2)
-        case .secondary:
-            return IslandShadowStyle(color: .clear, radius: 0, x: 0, y: 0)
         }
     }
 }

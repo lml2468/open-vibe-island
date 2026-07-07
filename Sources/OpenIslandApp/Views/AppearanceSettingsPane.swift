@@ -126,7 +126,7 @@ struct AppearanceSettingsPane: View {
         .buttonStyle(.plain)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.18)) {
-                hoveredProfile = hovering ? profile : nil
+                hoveredProfile = hovering ? profile : (hoveredProfile == profile ? nil : hoveredProfile)
             }
         }
     }
@@ -327,7 +327,7 @@ struct AppearanceSettingsPane: View {
         .buttonStyle(.plain)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.18)) {
-                hoveredRightSlot = hovering ? option : nil
+                hoveredRightSlot = hovering ? option : (hoveredRightSlot == option ? nil : hoveredRightSlot)
             }
         }
     }
@@ -395,7 +395,7 @@ struct AppearanceSettingsPane: View {
         .buttonStyle(.plain)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.18)) {
-                hoveredCenterLabel = hovering ? option : nil
+                hoveredCenterLabel = hovering ? option : (hoveredCenterLabel == option ? nil : hoveredCenterLabel)
             }
         }
     }
@@ -583,7 +583,7 @@ struct AppearanceSettingsPane: View {
         .buttonStyle(.plain)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.18)) {
-                hoveredOptionKey = hovering ? key : nil
+                hoveredOptionKey = hovering ? key : (hoveredOptionKey == key ? nil : hoveredOptionKey)
             }
         }
     }

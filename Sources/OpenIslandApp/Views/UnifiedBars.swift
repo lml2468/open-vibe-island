@@ -9,7 +9,7 @@ import SwiftUI
 struct UnifiedBars: View {
     enum Mode: Equatable {
         case idle       // rest — 3 short bars, middle breathes
-        case running    // wave — heights 4→12→4, stagger 0.15s
+        case running    // wave — heights 4→12→4, stagger 0.07s
         case waiting    // pause — outer bars tall, middle hidden, cross-pulse
     }
 
@@ -28,17 +28,16 @@ struct UnifiedBars: View {
         Column(x: 16.25, idleH: 3, waveCycle: [4, 10, 4], waveDelay: 0.14, waitH: 10),
     ]
 
-    /// Shared waiting-state phase clock so sibling widgets (right-slot agent
-    /// tiles, etc.) can pulse in lockstep with the glyph's outer bars.
-    static let waitingPeriod: TimeInterval = 1.2
-
+    /// Shared waiting-pulse clock. Returns a cosine-eased 0→1 phase that both
+    /// the glyph's outer bars and the right-slot agent tiles read from, so they
+    /// breathe in lockstep instead of drifting on independent animations.
     static func islandWaitingPhase(
         at date: Date,
-        period: TimeInterval = waitingPeriod,
-        offset: TimeInterval = 0
+        period: Double = 1.2,
+        offset: Double = 0
     ) -> Double {
-        let t = date.timeIntervalSinceReferenceDate + offset
-        let raw = t.truncatingRemainder(dividingBy: period) / period
+        let time = date.timeIntervalSinceReferenceDate
+        let raw = ((time + offset).truncatingRemainder(dividingBy: period)) / period
         let progress = raw < 0 ? raw + 1 : raw
         return 0.5 - 0.5 * cos(progress * 2 * .pi)
     }
@@ -97,15 +96,10 @@ struct UnifiedBars: View {
         case .idle:
             let h = column.idleH
             let isMiddle = column.x == Self.columns[1].x
-            let breath: Double
-            if isMiddle {
-                let period: TimeInterval = 2.8
-                let phase = time.truncatingRemainder(dividingBy: period) / period
-                let eased = 0.5 - 0.5 * cos(phase * 2 * .pi)
-                breath = 0.7 + 0.3 * eased
-            } else {
-                breath = 1.0
-            }
+            let t = (1 - cos(time * 2 * .pi / 2.8)) / 2
+            let breath = isMiddle
+                ? 0.7 + (1.0 - 0.7) * t
+                : 1.0
             return (h, Self.center - h / 2, breath)
         case .running:
             let cycle = column.waveCycle
@@ -126,10 +120,11 @@ struct UnifiedBars: View {
             let h = column.waitH
             guard h > 0 else { return (0, Self.center, 0) }
             let isLeading = column.x < Self.center
-            let offset = isLeading ? 0.0 : Self.waitingPeriod / 2
+            let period: TimeInterval = 1.2
+            let offset = isLeading ? 0.0 : period / 2
             let wave = Self.islandWaitingPhase(
                 at: Date(timeIntervalSinceReferenceDate: time),
-                period: Self.waitingPeriod,
+                period: period,
                 offset: offset
             )
             let opacity = 0.40 + 0.60 * wave

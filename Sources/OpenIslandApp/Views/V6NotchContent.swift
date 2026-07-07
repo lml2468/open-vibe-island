@@ -263,7 +263,6 @@ struct V6ClosedPill: View {
                 if let label {
                     V6CenterLabelView(text: label)
                         .padding(.leading, 6)
-                        .layoutPriority(1)
                         .transition(.opacity.combined(with: .move(edge: .leading)))
                 }
 

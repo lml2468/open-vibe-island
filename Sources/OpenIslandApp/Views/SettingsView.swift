@@ -257,27 +257,22 @@ struct GeneralSettingsPane: View {
 
             Section(lang.t("settings.general.behavior")) {
                 Toggle(lang.t("settings.general.autoCollapse"), isOn: .constant(true))
-                    .toggleStyle(IslandToggleStyle())
                 Toggle(lang.t("settings.general.showDockIcon"), isOn: Binding(
                     get: { model.showDockIcon },
                     set: { model.showDockIcon = $0 }
                 ))
-                .toggleStyle(IslandToggleStyle())
                 Toggle(lang.t("settings.general.hapticFeedback"), isOn: Binding(
                     get: { model.hapticFeedbackEnabled },
                     set: { model.hapticFeedbackEnabled = $0 }
                 ))
-                .toggleStyle(IslandToggleStyle())
                 Toggle(lang.t("settings.general.completionReply"), isOn: Binding(
                     get: { model.completionReplyEnabled },
                     set: { model.completionReplyEnabled = $0 }
                 ))
-                .toggleStyle(IslandToggleStyle())
                 Toggle(lang.t("settings.general.suppressFrontmostNotifications"), isOn: Binding(
                     get: { model.suppressFrontmostNotifications },
                     set: { model.suppressFrontmostNotifications = $0 }
                 ))
-                .toggleStyle(IslandToggleStyle())
             }
 
         }
@@ -337,7 +332,6 @@ struct SoundSettingsPane: View {
                     get: { model.isSoundMuted },
                     set: { _ in model.toggleSoundMuted() }
                 ))
-                .toggleStyle(IslandToggleStyle())
             }
 
             Section(lang.t("settings.sound.selectSound")) {
@@ -695,7 +689,6 @@ struct SetupSettingsPane: View {
                     get: { model.showCodexUsage },
                     set: { model.showCodexUsage = $0 }
                 ))
-                .toggleStyle(IslandToggleStyle())
             } header: {
                 HStack(spacing: 4) {
                     Text(lang.t("setup.section.usage"))
@@ -1032,7 +1025,6 @@ struct WatchSettingsPane: View {
                     get: { model.watchNotificationEnabled },
                     set: { model.watchNotificationEnabled = $0 }
                 ))
-                .toggleStyle(IslandToggleStyle())
 
                 if model.watchNotificationEnabled {
                     Text("When enabled, the macOS app broadcasts a Bonjour service that your iPhone can discover on the same WiFi network.")
