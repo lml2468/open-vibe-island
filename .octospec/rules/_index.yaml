@@ -9,7 +9,18 @@
 #   - when the injection budget is exceeded, keep load_bearing first, then by
 #     priority (desc); truncated low-priority rules inject only their summary line.
 
-rules: []
+rules:
+  - id: design-tokens-sync
+    priority: 70
+    load_bearing: false
+    inject_when:
+      paths:
+        - "DESIGN.md"
+        - "Sources/OpenIslandApp/Design/DesignTokens.swift"
+        - "Sources/OpenIslandApp/Design/BrandPalette.swift"
+        - "Sources/OpenIslandApp/IslandDesignPalette.swift"
+        - "Sources/OpenIslandApp/V6ClosedPillShape.swift"
+      touches: ["design", "design-tokens", "visual-identity"]
   # - id: error-handling
   #   priority: 80
   #   load_bearing: true
