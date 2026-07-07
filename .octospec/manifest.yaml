@@ -1,0 +1,23 @@
+# octospec manifest — per-repo metadata
+schema_version: 1
+
+# Which global ("constitution") version this repo inherits.
+# Pin an exact semver; upgrade = bump this + re-run octospec-sync.
+inherits: octo-spec@2.0.0
+
+# Repo tier is always "repo" here (the global layer lives in octo-spec).
+tier: repo
+
+owner: ""   # team or person responsible for this repo's .octospec/
+
+# Verify gate — how THIS repo proves a change is good. Language-agnostic: the
+# Verify phase, `/octospec verify`, and the octo-code adapter all read this
+# instead of assuming a language.
+verify:
+  gate:                    # commands run to prove the change; all must pass
+    - swift build
+    - swift test
+  tools: [swift]           # command prefixes unattended runs may invoke
+
+# If `verify:` is absent, the Verify phase falls back to the gates described in
+# CLAUDE.md / AGENTS.md.
