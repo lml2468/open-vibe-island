@@ -10,6 +10,18 @@
 #     priority (desc); truncated low-priority rules inject only their summary line.
 
 rules:
+  - id: bridge-transport-invariants
+    priority: 85
+    load_bearing: true
+    inject_when:
+      paths:
+        - "Sources/OpenIslandCore/BridgeServer.swift"
+        - "Sources/OpenIslandCore/BridgeTransport.swift"
+        - "Sources/OpenIslandCore/LocalBridgeClient.swift"
+        - "Sources/OpenIslandCore/BridgeCommandClient.swift"
+        - "Sources/OpenIslandCore/AgentEvent.swift"
+        - "Sources/OpenIslandHooks/OpenIslandHooksCLI.swift"
+      touches: ["bridge", "ipc", "transport"]
   - id: design-tokens-sync
     priority: 70
     load_bearing: false

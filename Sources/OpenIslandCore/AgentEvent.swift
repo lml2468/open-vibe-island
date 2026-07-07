@@ -285,7 +285,13 @@ public enum AgentEvent: Equatable, Codable, Sendable {
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(EventType.self, forKey: .type)
+        let rawType = try container.decode(String.self, forKey: .type)
+        // Forward compatibility: an unknown event type (emitted by a newer hook
+        // binary) is surfaced as a distinguishable error so BridgeCodec can skip
+        // just that frame instead of tearing down the whole NDJSON stream.
+        guard let type = EventType(rawValue: rawType) else {
+            throw BridgeTransportError.unknownMessageType(rawType)
+        }
 
         switch type {
         case .sessionStarted:
