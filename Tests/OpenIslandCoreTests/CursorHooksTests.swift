@@ -134,7 +134,75 @@ struct CursorHooksTests {
 
         #expect(uninstalled.changed == true)
         #expect(uninstalled.managedHooksPresent == true)
-        #expect(uninstalled.contents == nil)
+        // Install-from-empty adds a default `version`; uninstall removes only the
+        // managed hooks and leaves a residual `{ "version": 1 }` rather than
+        // wiping the file (we can't prove the version is ours, so we preserve it).
+        let data = try #require(uninstalled.contents)
+        let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        #expect(object["hooks"] == nil)
+        #expect(object["version"] as? Int == 1)
+    }
+
+    // MARK: - installer-safety slice (arch-quality-audit #19)
+
+    /// #19: install must not clobber a user-authored top-level `version`.
+    @Test
+    func cursorHookInstallerPreservesUserVersion() throws {
+        let existing = """
+        { "version": 3, "customKey": "keep-me" }
+        """.data(using: .utf8)!
+
+        let mutation = try CursorHookInstaller.installHooksJSON(
+            existingData: existing,
+            hookCommand: "/usr/local/bin/OpenIslandHooks --source cursor"
+        )
+
+        let data = try #require(mutation.contents)
+        let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        #expect(object["version"] as? Int == 3)
+        #expect(object["customKey"] as? String == "keep-me")
+        #expect(object["hooks"] != nil)
+    }
+
+    /// #19: install sets the default version only when the key is absent.
+    @Test
+    func cursorHookInstallerSetsDefaultVersionWhenAbsent() throws {
+        let existing = """
+        { "customKey": "keep-me" }
+        """.data(using: .utf8)!
+
+        let mutation = try CursorHookInstaller.installHooksJSON(
+            existingData: existing,
+            hookCommand: "/usr/local/bin/OpenIslandHooks --source cursor"
+        )
+
+        let data = try #require(mutation.contents)
+        let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        #expect(object["version"] as? Int == 1)
+        #expect(object["customKey"] as? String == "keep-me")
+    }
+
+    /// #19: uninstall must not delete a file that still carries user keys.
+    @Test
+    func cursorHookInstallerUninstallPreservesUserKeys() throws {
+        let existing = """
+        { "version": 3, "customKey": "keep-me" }
+        """.data(using: .utf8)!
+        let installed = try CursorHookInstaller.installHooksJSON(
+            existingData: existing,
+            hookCommand: "/usr/local/bin/OpenIslandHooks --source cursor"
+        )
+
+        let uninstalled = try CursorHookInstaller.uninstallHooksJSON(
+            existingData: installed.contents,
+            managedCommand: "/usr/local/bin/OpenIslandHooks --source cursor"
+        )
+
+        let data = try #require(uninstalled.contents)
+        let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        #expect(object["version"] as? Int == 3)
+        #expect(object["customKey"] as? String == "keep-me")
+        #expect(object["hooks"] == nil)
     }
 
     @Test

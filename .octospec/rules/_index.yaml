@@ -10,6 +10,18 @@
 #     priority (desc); truncated low-priority rules inject only their summary line.
 
 rules:
+  - id: installer-config-safety
+    priority: 85
+    load_bearing: true
+    inject_when:
+      paths:
+        - "Sources/OpenIslandCore/*HookInstaller.swift"
+        - "Sources/OpenIslandCore/*HookInstallationManager.swift"
+        - "Sources/OpenIslandCore/OpenCodePluginInstallationManager.swift"
+        - "Sources/OpenIslandCore/ClaudeStatusLineInstallationManager.swift"
+        - "Sources/OpenIslandCore/ConfigBackup.swift"
+        - "Sources/OpenIslandSetup/OpenIslandSetupCLI.swift"
+      touches: ["installer", "config"]
   - id: bridge-transport-invariants
     priority: 85
     load_bearing: true

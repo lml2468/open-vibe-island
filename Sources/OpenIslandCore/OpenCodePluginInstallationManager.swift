@@ -50,6 +50,19 @@ public struct OpenCodePluginInstallerManifest: Equatable, Codable, Sendable {
 public final class OpenCodePluginInstallationManager: @unchecked Sendable {
     public static let pluginFileName = "open-island.js"
 
+    public enum OpenCodePluginInstallerError: Error, LocalizedError, Equatable {
+        /// `config.json` exists but is not a decodable JSON object. We refuse to
+        /// overwrite it — doing so would destroy the user's OpenCode config.
+        case invalidConfigJSON
+
+        public var errorDescription: String? {
+            switch self {
+            case .invalidConfigJSON:
+                "~/.config/opencode/config.json exists but is not valid JSON; refusing to overwrite it."
+            }
+        }
+    }
+
     public let openCodeConfigDirectory: URL
     private let fileManager: FileManager
 
@@ -154,10 +167,17 @@ public final class OpenCodePluginInstallationManager: @unchecked Sendable {
         let ref = pluginFileReference()
 
         var json: [String: Any]
-        if let data = try? Data(contentsOf: configURL),
-           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        if fileManager.fileExists(atPath: configURL.path) {
+            // The file exists: it MUST parse as a JSON object, otherwise we would
+            // clobber the user's config by writing back only our own block.
+            // Match the other installers, which throw rather than reset.
+            guard let data = try? Data(contentsOf: configURL),
+                  let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                throw OpenCodePluginInstallerError.invalidConfigJSON
+            }
             json = existing
         } else {
+            // No config yet: start fresh.
             json = [:]
         }
 
@@ -226,17 +246,6 @@ public final class OpenCodePluginInstallationManager: @unchecked Sendable {
     }
 
     private func backupFile(at url: URL) throws {
-        guard fileManager.fileExists(atPath: url.path) else {
-            return
-        }
-
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        let timestamp = formatter.string(from: .now).replacingOccurrences(of: ":", with: "-")
-        let backupURL = url.appendingPathExtension("backup.\(timestamp)")
-        if fileManager.fileExists(atPath: backupURL.path) {
-            try fileManager.removeItem(at: backupURL)
-        }
-        try fileManager.copyItem(at: url, to: backupURL)
+        try ConfigBackup.backup(url, fileManager: fileManager)
     }
 }

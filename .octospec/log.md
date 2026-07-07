@@ -2,6 +2,12 @@
 
 Dated, one-line entries for octospec task activity in this repo. Newest first.
 
+- 2026-07-07 — **installer-safety** (Finish): stopped the installers from
+  destroying user config — OpenCode no longer clobbers a malformed `config.json`,
+  Cursor preserves a user-authored top-level `version`, and backups are bounded
+  (newest 5) via a shared `ConfigBackup` helper the 7 managers delegate to. Third
+  slice of `arch-quality-audit`. Gate green (367 tests). Journal:
+  `.octospec/journal/installer-safety.md`.
 - 2026-07-07 — **reducer-purity** (Finish): made `SessionState` deterministic
   (injectable clock on `dismissSession`) and fixed two state-machine bugs —
   `answerQuestion` end-guard (no phantom resurrection) and `markProcessLiveness`
