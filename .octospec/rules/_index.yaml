@@ -22,6 +22,14 @@ rules:
         - "Sources/OpenIslandCore/AgentEvent.swift"
         - "Sources/OpenIslandHooks/OpenIslandHooksCLI.swift"
       touches: ["bridge", "ipc", "transport"]
+  - id: session-state-invariants
+    priority: 85
+    load_bearing: true
+    inject_when:
+      paths:
+        - "Sources/OpenIslandCore/SessionState.swift"
+        - "Sources/OpenIslandCore/AgentSession.swift"
+      touches: ["reducer", "session-state"]
   - id: design-tokens-sync
     priority: 70
     load_bearing: false

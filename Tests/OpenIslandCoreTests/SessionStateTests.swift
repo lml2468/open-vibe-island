@@ -1547,6 +1547,144 @@ struct SessionStateTests {
         #expect(state.session(id: "s1")?.isVisibleInIsland == false)
         #expect(state.liveRunningCount == 0)
     }
+
+    // MARK: - reducer-purity slice (arch-quality-audit #2/#11/#12)
+
+    /// #11: answerQuestion must not resurrect an already-ended session into a
+    /// running-but-invisible phantom — mirrors resolvePermission's end-guard.
+    @Test
+    func answerQuestionDoesNotResurrectEndedSession() {
+        let t0 = Date(timeIntervalSince1970: 3_000)
+        var state = SessionState()
+
+        state.apply(
+            .sessionStarted(
+                SessionStarted(
+                    sessionID: "q1",
+                    title: "T",
+                    tool: .claudeCode,
+                    origin: .live,
+                    summary: "x",
+                    timestamp: t0
+                )
+            )
+        )
+        state.apply(
+            .questionAsked(
+                QuestionAsked(
+                    sessionID: "q1",
+                    prompt: QuestionPrompt(title: "Which env?", options: ["prod", "dev"]),
+                    timestamp: t0.addingTimeInterval(1)
+                )
+            )
+        )
+        // Out-of-order session-end arrives while the question is still open.
+        state.apply(
+            .sessionCompleted(
+                SessionCompleted(
+                    sessionID: "q1",
+                    summary: "ended",
+                    timestamp: t0.addingTimeInterval(2),
+                    isSessionEnd: true
+                )
+            )
+        )
+
+        state.answerQuestion(
+            sessionID: "q1",
+            response: QuestionPromptResponse(answer: "prod"),
+            at: t0.addingTimeInterval(3)
+        )
+
+        #expect(state.session(id: "q1")?.isSessionEnded == true)
+        #expect(state.session(id: "q1")?.phase == .completed)
+        #expect(state.runningCount == 0)
+        #expect(state.session(id: "q1")?.isVisibleInIsland == false)
+        #expect(state.session(id: "q1")?.questionPrompt == nil)
+    }
+
+    /// A live (not ended) session still transitions to running on answer.
+    @Test
+    func answerQuestionResumesLiveSession() {
+        let t0 = Date(timeIntervalSince1970: 3_500)
+        var state = SessionState()
+        state.apply(
+            .sessionStarted(
+                SessionStarted(sessionID: "q2", title: "T", tool: .claudeCode, summary: "x", timestamp: t0)
+            )
+        )
+        state.apply(
+            .questionAsked(
+                QuestionAsked(
+                    sessionID: "q2",
+                    prompt: QuestionPrompt(title: "Pick", options: ["a"]),
+                    timestamp: t0.addingTimeInterval(1)
+                )
+            )
+        )
+
+        state.answerQuestion(
+            sessionID: "q2",
+            response: QuestionPromptResponse(answer: "a"),
+            at: t0.addingTimeInterval(2)
+        )
+
+        #expect(state.session(id: "q2")?.phase == .running)
+        #expect(state.session(id: "q2")?.isSessionEnded == false)
+        #expect(state.session(id: "q2")?.updatedAt == t0.addingTimeInterval(2))
+    }
+
+    /// #12: for a non-hook session that stays alive, a not-seen count that goes
+    /// nonzero → 0 on a later alive poll must be persisted (no stale count left
+    /// in the map).
+    @Test
+    func markProcessLivenessPersistsNotSeenCountResetForAliveSession() {
+        var session = AgentSession(
+            id: "proc-1",
+            title: "Codex CLI",
+            tool: .codex,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        // Non-hook, non-remote, non-codex-app → the polled-liveness branch.
+        session.isHookManaged = false
+        session.isProcessAlive = true
+        var state = SessionState(sessions: [session])
+
+        // One miss bumps the count but the session is still alive (debounced).
+        state.markProcessLiveness(aliveSessionIDs: [])
+        #expect(state.session(id: "proc-1")?.processNotSeenCount == 1)
+        #expect(state.session(id: "proc-1")?.isProcessAlive == true)
+
+        // Seen alive again: count must reset to 0 in the stored session.
+        state.markProcessLiveness(aliveSessionIDs: ["proc-1"])
+        #expect(state.session(id: "proc-1")?.processNotSeenCount == 0)
+        #expect(state.session(id: "proc-1")?.isProcessAlive == true)
+    }
+
+    /// #2: dismissSession is deterministic — it stamps the supplied timestamp
+    /// rather than reading the wall clock.
+    @Test
+    func dismissSessionUsesInjectedTimestamp() {
+        let t0 = Date(timeIntervalSince1970: 9_000)
+        var session = AgentSession(
+            id: "remote-1",
+            title: "Remote",
+            tool: .claudeCode,
+            phase: .running,
+            summary: "Working",
+            updatedAt: Date(timeIntervalSince1970: 1_000)
+        )
+        session.isRemote = true
+        var state = SessionState(sessions: [session])
+
+        state.dismissSession(id: "remote-1", at: t0)
+
+        #expect(state.session(id: "remote-1")?.updatedAt == t0)
+        #expect(state.session(id: "remote-1")?.isSessionEnded == true)
+        #expect(state.session(id: "remote-1")?.phase == .completed)
+    }
 }
 
 private enum SessionStateTestError: Error {
