@@ -291,10 +291,21 @@ public struct SessionState: Equatable, Sendable {
         }
 
         session.questionPrompt = nil
-        session.phase = .running
+        session.updatedAt = timestamp
         let summary = response.displaySummary
         session.summary = summary.isEmpty ? "Answered the question." : "Answered: \(summary)"
-        session.updatedAt = timestamp
+
+        // Mirror resolvePermission: if the session already ended (e.g. an
+        // out-of-order sessionCompleted arrived while the question prompt was
+        // still open), don't flip it back to .running — that would make it count
+        // as running yet stay invisible in the island. Record the answer but
+        // keep it terminal.
+        if session.isSessionEnded {
+            session.phase = .completed
+        } else {
+            session.phase = .running
+        }
+
         upsert(session)
     }
 
@@ -421,6 +432,7 @@ public struct SessionState: Equatable, Sendable {
             }
 
             let wasAlive = session.isProcessAlive
+            let wasNotSeenCount = session.processNotSeenCount
 
             if aliveSessionIDs.contains(id) {
                 session.isProcessAlive = true
@@ -433,7 +445,11 @@ public struct SessionState: Equatable, Sendable {
             if session.isProcessAlive != wasAlive {
                 changed.insert(id)
                 upsert(session)
-            } else if !aliveSessionIDs.contains(id), session.processNotSeenCount >= 1 {
+            } else if session.processNotSeenCount != wasNotSeenCount {
+                // Persist a changed not-seen count even when liveness itself is
+                // unchanged — e.g. an already-alive session whose stale count is
+                // reset from nonzero back to 0 by a later "alive" poll. Without
+                // this the stale count lingers in the map.
                 upsert(session)
             }
         }
@@ -441,20 +457,20 @@ public struct SessionState: Equatable, Sendable {
         return changed
     }
 
-    /// Remove sessions that are no longer visible in the island.
-    /// Returns `true` if any sessions were removed.
-    @discardableResult
     /// Manually mark a session as completed and ended.
     /// Intended for remote sessions whose SSH tunnel dropped without a
     /// SessionEnd hook.
-    public mutating func dismissSession(id: String) {
+    public mutating func dismissSession(id: String, at timestamp: Date = .now) {
         guard var session = sessionsByID[id] else { return }
         session.isSessionEnded = true
         session.phase = .completed
-        session.updatedAt = .now
+        session.updatedAt = timestamp
         upsert(session)
     }
 
+    /// Remove sessions that are no longer visible in the island.
+    /// Returns `true` if any sessions were removed.
+    @discardableResult
     public mutating func removeInvisibleSessions() -> Bool {
         let before = sessionsByID.count
         sessionsByID = sessionsByID.filter { _, session in
