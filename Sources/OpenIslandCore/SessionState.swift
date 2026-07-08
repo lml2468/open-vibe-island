@@ -95,8 +95,9 @@ public struct SessionState: Equatable, Sendable {
             // hooks) must not resurrect it into a "running" phantom that counts
             // toward runningCount but is invisible in the island
             // (isVisibleInIsland is false once isSessionEnded). Only an explicit
-            // .sessionStarted may revive it.
-            guard !session.isSessionEnded else {
+            // .sessionStarted may revive it. Shared invariant:
+            // `isTerminalAndMustNotResurrect`.
+            guard !isTerminalAndMustNotResurrect(session) else {
                 return
             }
 
@@ -127,6 +128,14 @@ public struct SessionState: Equatable, Sendable {
                 return
             }
 
+            // An ended session is terminal — a late/out-of-order permission
+            // prompt must not resurrect it into a waiting-but-invisible phantom
+            // (see `isTerminalAndMustNotResurrect`). Only `.sessionStarted`
+            // revives an ended session.
+            guard !isTerminalAndMustNotResurrect(session) else {
+                return
+            }
+
             session.phase = .waitingForApproval
             session.summary = payload.request.summary
             session.permissionRequest = payload.request
@@ -136,6 +145,12 @@ public struct SessionState: Equatable, Sendable {
 
         case let .questionAsked(payload):
             guard var session = sessionsByID[payload.sessionID] else {
+                return
+            }
+
+            // See `.permissionRequested`: an ended session must not be revived
+            // by a late question prompt.
+            guard !isTerminalAndMustNotResurrect(session) else {
                 return
             }
 
@@ -250,7 +265,7 @@ public struct SessionState: Equatable, Sendable {
         // arrived while the permission prompt was still open), don't flip it
         // back to .running — that would make it count as running yet stay
         // invisible in the island. Record the resolution but keep it terminal.
-        if session.isSessionEnded {
+        if isTerminalAndMustNotResurrect(session) {
             session.phase = .completed
             upsert(session)
             return
@@ -258,22 +273,18 @@ public struct SessionState: Equatable, Sendable {
 
         if resolution.isApproved {
             session.phase = .running
-            switch session.tool {
-            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+            if session.tool.isClaudeCodeFork || session.tool == .geminiCLI {
                 session.summary = "Permission approved. \(session.tool.displayName) continued the tool."
-            case .openCode:
+            } else if session.tool == .openCode {
                 session.summary = "Permission approved. OpenCode continued the tool."
-            default:
+            } else {
                 session.summary = "Permission approved. Agent resumed work."
             }
         } else {
             session.phase = .completed
-            switch session.tool {
-            case .claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI:
+            if session.tool.isClaudeCodeFork || session.tool == .geminiCLI || session.tool == .openCode {
                 session.summary = "Permission denied in Open Island."
-            case .openCode:
-                session.summary = "Permission denied in Open Island."
-            default:
+            } else {
                 session.summary = "Permission denied. Review the session in the terminal."
             }
         }
@@ -299,8 +310,8 @@ public struct SessionState: Equatable, Sendable {
         // out-of-order sessionCompleted arrived while the question prompt was
         // still open), don't flip it back to .running — that would make it count
         // as running yet stay invisible in the island. Record the answer but
-        // keep it terminal.
-        if session.isSessionEnded {
+        // keep it terminal. Shared invariant: `isTerminalAndMustNotResurrect`.
+        if isTerminalAndMustNotResurrect(session) {
             session.phase = .completed
         } else {
             session.phase = .running
@@ -477,6 +488,17 @@ public struct SessionState: Equatable, Sendable {
             session.isVisibleInIsland
         }
         return sessionsByID.count != before
+    }
+
+    /// The single expression of the "don't resurrect an ended session"
+    /// invariant. A session with `isSessionEnded == true` is terminal: no
+    /// phase-changing path (activity/permission/question events or the
+    /// permission/answer resolvers) may flip it back to a non-terminal phase,
+    /// which would create a session that counts as running/actionable yet is
+    /// invisible in the island (`isVisibleInIsland` is false once ended). Only
+    /// an explicit `.sessionStarted` revives it.
+    private func isTerminalAndMustNotResurrect(_ session: AgentSession) -> Bool {
+        session.isSessionEnded
     }
 
     private mutating func upsert(_ session: AgentSession) {
