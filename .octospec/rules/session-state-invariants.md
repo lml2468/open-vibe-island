@@ -37,13 +37,19 @@ on a small state space enforced by guards; keep these invariants when changing i
 - The visibility state space is
   `phase × isSessionEnded × isProcessAlive × isHookManaged × isCodexAppSession`.
   A session with `isSessionEnded == true` is terminal.
-- Any mutator that sets `phase = .running` **must** first check `isSessionEnded`
-  and keep the session `.completed` if it has ended. Flipping an ended session
-  back to `.running` creates a "running but invisible" phantom that inflates
-  `runningCount` while `isVisibleInIsland` is false. `resolvePermission` and
-  `answerQuestion` both implement this guard — new actionable-resolution paths
-  must too. (A future refactor should centralize this instead of duplicating the
-  guard per method.)
+- Any mutator that sets a non-terminal `phase` (`.running` / `.waitingForApproval`
+  / `.waitingForAnswer`) **must** first check the terminal guard and keep the
+  session `.completed` if it has ended. Flipping an ended session back creates a
+  "running/actionable but invisible" phantom that inflates the counts while
+  `isVisibleInIsland` is false.
+- The invariant is now expressed in **one** place —
+  `SessionState.isTerminalAndMustNotResurrect(_:)`. Every phase-changing path
+  routes through it: `apply(.activityUpdated)`, `apply(.permissionRequested)`,
+  `apply(.questionAsked)`, `resolvePermission`, `answerQuestion`. Do NOT re-inline
+  `session.isSessionEnded` in a new mutator — call the helper, and add any new
+  phase-changing path to that list. (`apply(.actionableStateResolved)` is
+  implicitly safe: it early-returns unless the session is already in a waiting
+  phase, which an ended `.completed` session never is.)
 
 ## Persist what changed
 
