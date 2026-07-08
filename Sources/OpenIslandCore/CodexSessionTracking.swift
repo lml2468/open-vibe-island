@@ -547,15 +547,7 @@ public final class CodexRolloutDiscovery: @unchecked Sendable {
     }
 
     private func extractCompleteLines(from buffer: inout Data) -> [String] {
-        let newline = UInt8(ascii: "\n")
-        var lines: [String] = []
-        while let newlineIndex = buffer.firstIndex(of: newline) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(...newlineIndex)
-            guard !lineData.isEmpty else { continue }
-            lines.append(String(decoding: lineData, as: UTF8.self))
-        }
-        return lines
+        extractNDJSONLines(from: &buffer)
     }
 }
 
@@ -1550,21 +1542,7 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
     }
 
     private func completeLines(from buffer: inout Data) -> [String] {
-        let newline = UInt8(ascii: "\n")
-        var lines: [String] = []
-
-        while let newlineIndex = buffer.firstIndex(of: newline) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(...newlineIndex)
-
-            guard !lineData.isEmpty else {
-                continue
-            }
-
-            lines.append(String(decoding: lineData, as: UTF8.self))
-        }
-
-        return lines
+        extractNDJSONLines(from: &buffer)
     }
 
     private func makeObservation(for target: CodexRolloutWatchTarget) -> Observation {
@@ -1701,11 +1679,7 @@ private func codexRolloutJSONObject(for line: String) -> [String: Any]? {
 }
 
 private func codexRolloutParseTimestamp(_ string: String?) -> Date? {
-    guard let string else {
-        return nil
-    }
-
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter.date(from: string)
+    // Shared parser: hoisted static formatters (no per-call allocation) and
+    // tolerant of both fractional- and whole-second ISO-8601 forms.
+    TranscriptTimestamp.parse(string)
 }

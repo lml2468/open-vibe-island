@@ -120,22 +120,44 @@ public enum CodexUsageLoader {
         return nil
     }
 
+    private static let streamingChunkSize = 64 * 1_024
+
     private static func loadLatestSnapshot(from fileURL: URL, modifiedAt: Date) -> CodexUsageSnapshot? {
-        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+        // Stream the rollout in chunks rather than slurping the whole file into a
+        // String — rollouts can be tens of MB, and this loader is called on
+        // startup across many candidate files. Mirrors CodexRolloutDiscovery /
+        // ClaudeTranscriptDiscovery. The last matching line in the file wins.
+        guard let fileHandle = try? FileHandle(forReadingFrom: fileURL) else {
             return nil
         }
+        defer { try? fileHandle.close() }
 
         var latestSnapshot: CodexUsageSnapshot?
-        contents.enumerateLines { line, _ in
-            guard let snapshot = snapshot(
+        let consume: (String) -> Void = { line in
+            if let snapshot = snapshot(
                 from: line,
                 filePath: fileURL.path,
                 fallbackTimestamp: modifiedAt
-            ) else {
-                return
+            ) {
+                latestSnapshot = snapshot
             }
+        }
 
-            latestSnapshot = snapshot
+        var buffer = Data()
+        while let chunk = try? fileHandle.read(upToCount: streamingChunkSize),
+              !chunk.isEmpty {
+            buffer.append(chunk)
+            for line in extractNDJSONLines(from: &buffer) {
+                consume(line)
+            }
+        }
+
+        // Honor a final line written without a trailing newline.
+        if !buffer.isEmpty {
+            let trailing = String(decoding: buffer, as: UTF8.self)
+            if !trailing.isEmpty {
+                consume(trailing)
+            }
         }
 
         return latestSnapshot

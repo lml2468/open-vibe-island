@@ -10,6 +10,18 @@
 #     priority (desc); truncated low-priority rules inject only their summary line.
 
 rules:
+  - id: transcript-reader-perf
+    priority: 80
+    load_bearing: false
+    inject_when:
+      paths:
+        - "Sources/OpenIslandCore/ClaudeTranscriptDiscovery.swift"
+        - "Sources/OpenIslandCore/CodexSessionTracking.swift"
+        - "Sources/OpenIslandCore/CodexUsage.swift"
+        - "Sources/OpenIslandCore/CursorTranscriptReader.swift"
+        - "Sources/OpenIslandCore/NDJSONLineExtractor.swift"
+        - "Sources/OpenIslandCore/TranscriptTimestamp.swift"
+      touches: ["transcript", "streaming", "performance"]
   - id: ci-quality-gates
     priority: 80
     load_bearing: false

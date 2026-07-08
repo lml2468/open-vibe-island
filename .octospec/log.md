@@ -2,6 +2,11 @@
 
 Dated, one-line entries for octospec task activity in this repo. Newest first.
 
+- 2026-07-08 — **perf-battery** (Finish): fixed transcript-reading perf/correctness
+  bugs — Codex usage OOM slurp → streaming, Claude fractional-second timestamps,
+  O(n^2) line extraction → shared linear extractor, hoisted formatters. Fifth slice
+  of `arch-quality-audit`. Gate green (378 tests). Journal:
+  `.octospec/journal/perf-battery.md`.
 - 2026-07-08 — **quality-gates** (Finish): added enforcement — warnings-as-errors
   + SwiftLint in CI (harness flag + `.swiftlint.yml`), guarded shipped developer
   PII (`IslandDebugScenario` paths), and covered the fail-open hook contract with
