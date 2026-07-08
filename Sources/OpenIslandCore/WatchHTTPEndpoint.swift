@@ -106,14 +106,14 @@ public typealias WatchActiveSessionCountProvider = @Sendable () -> Int
 ///
 /// Uses `NWListener` for TCP + Bonjour advertising of `_openisland._tcp`.
 /// Implements a minimal HTTP/1.1 parser for 4 endpoints:
-/// - `POST /pair` — submit 4-digit pairing code, receive session token
+/// - `POST /pair` — submit the numeric pairing code, receive session token
 /// - `GET /events` — SSE stream of agent events
 /// - `POST /resolution` — submit Watch action decisions
 /// - `GET /status` — connection and session status
 public final class WatchHTTPEndpoint: @unchecked Sendable {
     private static let logger = Logger(subsystem: "app.openisland", category: "WatchHTTPEndpoint")
     private static let serviceType = "_openisland._tcp"
-    private static let pairingCodeLength = 4
+    static let pairingCodeLength = 6
     private static let pairingCodeExpiry: TimeInterval = 120 // 2 minutes
     /// Max failed /pair attempts before the endpoint locks out further attempts.
     private static let maxPairingFailures = 5
@@ -128,8 +128,9 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     private var currentPairingCode: String = ""
     private var pairingCodeGeneratedAt: Date = .distantPast
     private var validTokens: Set<String> = []
-    // Brute-force protection: a 4-digit code is only 10k combinations, so an
-    // unauthenticated attacker on the LAN could exhaust it without a limiter.
+    // Brute-force protection: even a 6-digit code (1M combinations) is worth
+    // rate-limiting, since an unauthenticated LAN attacker could otherwise
+    // grind it; the throttle plus the code's short expiry bound the exposure.
     private var pairingThrottle = PairingThrottle(
         maxFailures: WatchHTTPEndpoint.maxPairingFailures,
         lockoutDuration: WatchHTTPEndpoint.pairingLockoutDuration
@@ -483,7 +484,7 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
     ///
     /// The lockout is intentionally global (not per-peer): this is a local-first
     /// app on a trusted LAN, so a single counter is enough to defeat brute-force
-    /// of the 4-digit code. It deliberately does NOT rotate the code on lockout —
+    /// of the numeric code. It deliberately does NOT rotate the code on lockout —
     /// the code already rotates on expiry and on successful pairing, and rotating
     /// here would let any LAN peer invalidate the legitimate user's displayed
     /// code mid-pairing. After the lockout window passes the same code still
@@ -610,15 +611,51 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         }
     }
 
-    // MARK: - Private: Auth
+    // MARK: - Auth
 
-    private func authenticateRequest(headers: [String: String]) -> Bool {
+    /// Constant-time string equality — visits every byte and does not branch on
+    /// content, so verification time does not reveal where a mismatch occurred.
+    /// Unequal lengths return false, but still compare over the shorter length so
+    /// the fast path isn't a length oracle beyond the (already public) length.
+    static func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
+        let a = Array(lhs.utf8)
+        let b = Array(rhs.utf8)
+        // Fold the length check into the accumulator so there is a single
+        // constant-time verdict rather than an early return on mismatched length.
+        var difference: UInt8 = a.count == b.count ? 0 : 1
+        let count = min(a.count, b.count)
+        for i in 0..<count {
+            difference |= a[i] ^ b[i]
+        }
+        return difference == 0
+    }
+
+    /// Extract the bearer token from HTTP headers, or nil if absent/malformed.
+    /// HTTP header names are case-insensitive, so both `Authorization` and
+    /// `authorization` are accepted; the scheme must be `Bearer `.
+    static func bearerToken(from headers: [String: String]) -> String? {
         guard let auth = headers["authorization"] ?? headers["Authorization"],
               auth.hasPrefix("Bearer ") else {
-            return false
+            return nil
         }
-        let token = String(auth.dropFirst("Bearer ".count))
-        return validTokens.contains(token)
+        return String(auth.dropFirst("Bearer ".count))
+    }
+
+    /// Whether `token` is one of the currently valid tokens, compared in
+    /// constant time with no early-out across the set: every stored token is
+    /// visited so a match's position does not leak via timing.
+    static func isAuthorizedToken(_ token: String, among validTokens: Set<String>) -> Bool {
+        var matched = false
+        for candidate in validTokens {
+            // Non-short-circuiting OR so the loop always runs to completion.
+            matched = constantTimeEquals(candidate, token) || matched
+        }
+        return matched
+    }
+
+    private func authenticateRequest(headers: [String: String]) -> Bool {
+        guard let token = Self.bearerToken(from: headers) else { return false }
+        return Self.isAuthorizedToken(token, among: validTokens)
     }
 
     // MARK: - Private: HTTP Helpers
@@ -641,10 +678,16 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
 
     // MARK: - Private: Pairing Code Generation
 
+    /// Generate a numeric pairing code of the given length (digits only).
+    /// Pure so the keyspace/charset is unit-testable.
+    static func makePairingCode(length: Int) -> String {
+        guard length > 0 else { return "" }
+        return (0..<length).map { _ in String(Int.random(in: 0...9)) }.joined()
+    }
+
     /// Must be called on `queue`.
     private func regeneratePairingCodeUnsafe() {
-        let digits = (0..<Self.pairingCodeLength).map { _ in String(Int.random(in: 0...9)) }
-        currentPairingCode = digits.joined()
+        currentPairingCode = Self.makePairingCode(length: Self.pairingCodeLength)
         pairingCodeGeneratedAt = Date()
         Self.logger.info("New pairing code generated")
     }
