@@ -104,7 +104,7 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
             }
 
             if let timestampText = object["timestamp"] as? String,
-               let timestamp = ISO8601DateFormatter().date(from: timestampText) {
+               let timestamp = TranscriptTimestamp.parse(timestampText) {
                 updatedAt = timestamp
             }
 
@@ -216,15 +216,7 @@ public final class ClaudeTranscriptDiscovery: @unchecked Sendable {
     private static let streamingChunkSize = 64 * 1_024
 
     private func extractCompleteLines(from buffer: inout Data) -> [String] {
-        let newline = UInt8(ascii: "\n")
-        var lines: [String] = []
-        while let newlineIndex = buffer.firstIndex(of: newline) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
-            buffer.removeSubrange(...newlineIndex)
-            guard !lineData.isEmpty else { continue }
-            lines.append(String(decoding: lineData, as: UTF8.self))
-        }
-        return lines
+        extractNDJSONLines(from: &buffer)
     }
 
     private func promptText(from content: Any?) -> String? {
