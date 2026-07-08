@@ -1685,6 +1685,163 @@ struct SessionStateTests {
         #expect(state.session(id: "remote-1")?.isSessionEnded == true)
         #expect(state.session(id: "remote-1")?.phase == .completed)
     }
+
+    // MARK: - reducer-single-source slice (arch-quality-audit-r2 #7/#19)
+
+    /// Helper: a session that has already ended (phase .completed, isSessionEnded).
+    private func endedSessionState(
+        id: String,
+        tool: AgentTool = .claudeCode,
+        t0: Date
+    ) -> SessionState {
+        var state = SessionState()
+        state.apply(
+            .sessionStarted(
+                SessionStarted(sessionID: id, title: "T", tool: tool, origin: .live, summary: "x", timestamp: t0)
+            )
+        )
+        state.apply(
+            .sessionCompleted(
+                SessionCompleted(
+                    sessionID: id,
+                    summary: "ended",
+                    timestamp: t0.addingTimeInterval(1),
+                    isSessionEnd: true
+                )
+            )
+        )
+        return state
+    }
+
+    /// A1: an out-of-order `permissionRequested` must not resurrect an ended
+    /// session into a waiting-but-invisible phantom. (Currently unguarded in
+    /// `apply(.permissionRequested)`.)
+    @Test
+    func applyPermissionRequestedDoesNotResurrectEndedSession() {
+        let t0 = Date(timeIntervalSince1970: 10_000)
+        var state = endedSessionState(id: "p1", t0: t0)
+
+        #expect(state.session(id: "p1")?.isSessionEnded == true)
+
+        state.apply(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "p1",
+                    request: PermissionRequest(title: "Edit", summary: "edit", affectedPath: "f.swift"),
+                    timestamp: t0.addingTimeInterval(2)
+                )
+            )
+        )
+
+        #expect(state.session(id: "p1")?.phase == .completed)
+        #expect(state.session(id: "p1")?.isSessionEnded == true)
+        #expect(state.session(id: "p1")?.permissionRequest == nil)
+        #expect(state.session(id: "p1")?.isVisibleInIsland == false)
+    }
+
+    /// A2: an out-of-order `questionAsked` must not resurrect an ended session.
+    @Test
+    func applyQuestionAskedDoesNotResurrectEndedSession() {
+        let t0 = Date(timeIntervalSince1970: 11_000)
+        var state = endedSessionState(id: "q1", t0: t0)
+
+        state.apply(
+            .questionAsked(
+                QuestionAsked(
+                    sessionID: "q1",
+                    prompt: QuestionPrompt(title: "Which env?", options: ["prod", "dev"]),
+                    timestamp: t0.addingTimeInterval(2)
+                )
+            )
+        )
+
+        #expect(state.session(id: "q1")?.phase == .completed)
+        #expect(state.session(id: "q1")?.isSessionEnded == true)
+        #expect(state.session(id: "q1")?.questionPrompt == nil)
+        #expect(state.session(id: "q1")?.isVisibleInIsland == false)
+    }
+
+    /// A3: a normal permission/question on a LIVE (not-ended) session still
+    /// transitions as before — the guard must not be over-broad.
+    @Test
+    func applyPermissionAndQuestionStillTransitionLiveSession() {
+        let t0 = Date(timeIntervalSince1970: 12_000)
+        var state = SessionState()
+        state.apply(
+            .sessionStarted(
+                SessionStarted(sessionID: "live", title: "T", tool: .claudeCode, origin: .live, summary: "x", timestamp: t0)
+            )
+        )
+
+        state.apply(
+            .permissionRequested(
+                PermissionRequested(
+                    sessionID: "live",
+                    request: PermissionRequest(title: "Edit", summary: "edit", affectedPath: "f.swift"),
+                    timestamp: t0.addingTimeInterval(1)
+                )
+            )
+        )
+        #expect(state.session(id: "live")?.phase == .waitingForApproval)
+        #expect(state.session(id: "live")?.permissionRequest != nil)
+
+        state.apply(
+            .questionAsked(
+                QuestionAsked(
+                    sessionID: "live",
+                    prompt: QuestionPrompt(title: "Pick", options: ["a", "b"]),
+                    timestamp: t0.addingTimeInterval(2)
+                )
+            )
+        )
+        #expect(state.session(id: "live")?.phase == .waitingForAnswer)
+        #expect(state.session(id: "live")?.questionPrompt != nil)
+    }
+
+    /// A4: the approved-permission summary is byte-for-byte unchanged for every
+    /// tool after the fork-list is deduped through `AgentTool.isClaudeCodeFork`
+    /// (which does NOT include `.geminiCLI`, so the reducer must keep treating
+    /// gemini as a fork for the summary string).
+    @Test
+    func resolvePermissionApprovedSummaryUnchangedPerTool() {
+        let t0 = Date(timeIntervalSince1970: 13_000)
+
+        let forkTools: [AgentTool] = [.claudeCode, .geminiCLI, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI]
+        for tool in forkTools {
+            var state = SessionState()
+            state.apply(.sessionStarted(SessionStarted(sessionID: "f", title: "T", tool: tool, origin: .live, summary: "x", timestamp: t0)))
+            state.apply(.permissionRequested(PermissionRequested(sessionID: "f", request: PermissionRequest(title: "Edit", summary: "e", affectedPath: "f"), timestamp: t0.addingTimeInterval(1))))
+            state.resolvePermission(sessionID: "f", resolution: .allowOnce(), at: t0.addingTimeInterval(2))
+            #expect(state.session(id: "f")?.summary == "Permission approved. \(tool.displayName) continued the tool.")
+        }
+
+        // OpenCode keeps its dedicated string.
+        var oc = SessionState()
+        oc.apply(.sessionStarted(SessionStarted(sessionID: "o", title: "T", tool: .openCode, origin: .live, summary: "x", timestamp: t0)))
+        oc.apply(.permissionRequested(PermissionRequested(sessionID: "o", request: PermissionRequest(title: "Edit", summary: "e", affectedPath: "f"), timestamp: t0.addingTimeInterval(1))))
+        oc.resolvePermission(sessionID: "o", resolution: .allowOnce(), at: t0.addingTimeInterval(2))
+        #expect(oc.session(id: "o")?.summary == "Permission approved. OpenCode continued the tool.")
+
+        // A non-fork tool (codex) keeps the generic string.
+        var cx = SessionState()
+        cx.apply(.sessionStarted(SessionStarted(sessionID: "c", title: "T", tool: .codex, origin: .live, summary: "x", timestamp: t0)))
+        cx.apply(.permissionRequested(PermissionRequested(sessionID: "c", request: PermissionRequest(title: "Edit", summary: "e", affectedPath: "f"), timestamp: t0.addingTimeInterval(1))))
+        cx.resolvePermission(sessionID: "c", resolution: .allowOnce(), at: t0.addingTimeInterval(2))
+        #expect(cx.session(id: "c")?.summary == "Permission approved. Agent resumed work.")
+    }
+
+    /// A4 (dedup): `isClaudeCodeFork` classifies the fork set correctly and
+    /// excludes `.geminiCLI`, `.openCode`, `.codex` — pinning the helper the
+    /// reducer now relies on.
+    @Test
+    func isClaudeCodeForkMembershipIsStable() {
+        for tool in [AgentTool.claudeCode, .qoder, .qwenCode, .factory, .codebuddy, .kimiCLI] {
+            #expect(tool.isClaudeCodeFork, "\(tool) should be a Claude-Code fork")
+        }
+        for tool in [AgentTool.geminiCLI, .openCode, .codex, .cursor] {
+            #expect(tool.isClaudeCodeFork == false, "\(tool) should NOT be a Claude-Code fork")
+        }
+    }
 }
 
 private enum SessionStateTestError: Error {
