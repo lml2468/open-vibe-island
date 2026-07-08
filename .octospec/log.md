@@ -2,6 +2,11 @@
 
 Dated, one-line entries for octospec task activity in this repo. Newest first.
 
+- 2026-07-08 — **quality-gates** (Finish): added enforcement — warnings-as-errors
+  + SwiftLint in CI (harness flag + `.swiftlint.yml`), guarded shipped developer
+  PII (`IslandDebugScenario` paths), and covered the fail-open hook contract with
+  a test. Fourth slice of `arch-quality-audit`. Gate green (369 tests). Journal:
+  `.octospec/journal/quality-gates.md`.
 - 2026-07-07 — **installer-safety** (Finish): stopped the installers from
   destroying user config — OpenCode no longer clobbers a malformed `config.json`,
   Cursor preserves a user-authored top-level `version`, and backups are bounded

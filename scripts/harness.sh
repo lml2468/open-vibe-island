@@ -21,15 +21,16 @@ run_step() {
             ;;
         test)
             echo "==> test"
-            swift test
+            swift test -Xswiftc -warnings-as-errors
             ;;
         lint)
             echo "==> lint"
             zsh "$repo_root/scripts/lint-strings.sh"
+            zsh "$repo_root/scripts/lint-swift.sh"
             ;;
         build)
             echo "==> build"
-            swift build
+            swift build -Xswiftc -warnings-as-errors
             ;;
         smoke)
             echo "==> smoke"

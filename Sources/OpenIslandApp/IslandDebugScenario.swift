@@ -234,7 +234,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/dev/Projects/open-island",
                 terminalSessionID: "ghostty-running"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -261,7 +261,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-agent-sdk",
                 paneTitle: "codex ~/Personal/open-agent-sdk",
-                workingDirectory: "/Users/wangruobing/Personal/open-agent-sdk",
+                workingDirectory: "/Users/dev/Projects/open-agent-sdk",
                 terminalSessionID: "ghostty-recent"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -294,7 +294,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: workspace,
                 paneTitle: "codex ~/Personal/\(workspace)",
-                workingDirectory: "/Users/wangruobing/Personal/\(workspace)",
+                workingDirectory: "/Users/dev/Projects/\(workspace)",
                 terminalSessionID: "ghostty-\(id)"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -326,7 +326,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/dev/Projects/open-island",
                 terminalSessionID: "ghostty-approval"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -334,7 +334,7 @@ private enum DebugSessionFactory {
                 lastUserPrompt: "askUserquestion 和权限审批，我想把他们也做到我们的 island 里。",
                 lastAssistantMessage: "已经准备好重写 DEV 页面，需要批准文件改动。",
                 currentTool: "exec_command",
-                currentCommandPreview: "head -5000 /Users/wangruobing/Personal/claude-research/extracts/claude-bun-2.1.81-v3/islands/000_cli.js.txt"
+                currentCommandPreview: "head -5000 /Users/dev/Projects/claude-research/extracts/claude-bun-2.1.81-v3/islands/000_cli.js.txt"
             )
         )
     }
@@ -368,7 +368,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/dev/Projects/open-island",
                 terminalSessionID: "ghostty-question"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -393,7 +393,7 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/dev/Projects/open-island",
                 terminalSessionID: "ghostty-completion"
             ),
             codexMetadata: CodexSessionMetadata(
@@ -418,14 +418,14 @@ private enum DebugSessionFactory {
                 terminalApp: "Ghostty",
                 workspaceName: "open-island",
                 paneTitle: "codex ~/Personal/open-island",
-                workingDirectory: "/Users/wangruobing/Personal/open-island",
+                workingDirectory: "/Users/dev/Projects/open-island",
                 terminalSessionID: "ghostty-completion-long"
             ),
             codexMetadata: CodexSessionMetadata(
                 initialUserPrompt: "帮我把这个 README 也提交了，然后把结果贴给我。",
                 lastUserPrompt: "顺便确认一下当前工作树和验证情况。",
                 lastAssistantMessage: """
-[README.md](/Users/wangruobing/Personal/open-island/README.md) 的现有改动已经单独提交了，commit 是 `f196316`，message 是 `docs: update readme tagline`。
+[README.md](/Users/dev/Projects/open-island/README.md) 的现有改动已经单独提交了，commit 是 `f196316`，message 是 `docs: update readme tagline`。
 
 这轮没有跑测试，因为只是文案改动。当前工作树是干净的，`main` 相对 `origin/main` 现在是 `ahead 6`。
 

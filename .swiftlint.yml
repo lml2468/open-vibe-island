@@ -1,0 +1,72 @@
+# SwiftLint configuration for Open Island.
+#
+# Intentionally lenient for revision 1 (quality-gates slice): the goal is to
+# start catching NEW high-signal problems without forcing a reformat of the
+# existing tree. Thresholds are set above the current worst offenders (e.g.
+# BridgeServer.swift / IslandPanelView.swift are ~2700 lines) so `swiftlint
+# --strict` passes today; tighten in follow-up slices as the god-objects are
+# decomposed.
+
+included:
+  - Sources
+  - Tests
+
+# Generated / vendored paths that should never be linted.
+excluded:
+  - .build
+  - Sources/OpenIslandApp/Resources
+
+# Rules that are noisy or conflict with this codebase's established style are
+# disabled. Everything else in the default rule set stays on. The rules in the
+# second group below are violated only by the *current* tree (mostly test-code
+# idioms — force-casting decoded JSON, String<->Data conversions); they are
+# parked here so `--strict` passes today without a mass reformat, and can be
+# re-enabled in a follow-up cleanup slice.
+disabled_rules:
+  # Deliberate style choices for this codebase:
+  - todo                    # repo uses no TODO/FIXME markers; not worth failing on
+  - trailing_comma          # multiline literals here use trailing commas by convention
+  - line_length             # long AppleScript / URL string literals are common
+  - function_body_length    # large view bodies exist; a decomposition slice will address
+  - type_body_length        # god-objects tracked separately (discovery #5)
+  - file_length             # BridgeServer/IslandPanelView are known-large; separate slice
+  - cyclomatic_complexity   # large switch statements over agent/event enums
+  - nesting                 # SwiftUI view builders nest deeply
+  - for_where               # stylistic; too noisy to gate on now
+  # Parked (violated by the current tree — mostly test idioms; tighten later):
+  - force_cast                          # test JSON assertions cast decoded objects
+  - force_try                           # test fixtures use try!
+  - non_optional_string_data_conversion # String(...).data(using:) in tests
+  - optional_data_string_conversion     # String(data:encoding:) in tests
+  - comma                               # a few spacing nits in existing code
+  - vertical_whitespace                 # a couple of double-blank lines
+  - trailing_whitespace
+  - implicit_optional_initialization
+  - function_parameter_count            # some payload inits take many params
+  - unused_optional_binding
+  - unused_closure_parameter
+  - opening_brace
+  - control_statement
+  - void_function_in_ternary
+
+# Keep identifier naming pragmatic — short names like `id`, `x`, `fd`, `to`
+# appear in socket/geometry code.
+identifier_name:
+  min_length:
+    warning: 1
+  max_length:
+    warning: 80
+    error: 100
+  allowed_symbols: ["_"]
+
+# Type names: allow the project's longer descriptive names.
+type_name:
+  max_length:
+    warning: 60
+    error: 80
+
+# Large but bounded — these are safety nets against runaway growth, set well
+# above current maxima so the tree passes today.
+large_tuple:
+  warning: 4
+  error: 5
