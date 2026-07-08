@@ -1383,7 +1383,17 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         var pendingBuffer = Data()
         var snapshot = CodexRolloutSnapshot()
         var shouldTrimLeadingPartialLine = false
+        /// Fingerprint of the file's leading bytes, captured whenever `offset` is
+        /// established. A byte-offset tailer assumes the file is append-only; if
+        /// the head changes the file was rewritten/compacted in place and the
+        /// stored offset now points into unrelated bytes, so we must reset.
+        var headFingerprint = Data()
     }
+
+    /// Number of leading bytes hashed to detect an in-place rewrite. Bounded so
+    /// this stays a cheap, fixed-size read on every poll (never a whole-file
+    /// slurp — see the transcript-reader-perf rule).
+    private static let headFingerprintByteCount = 256
 
     public var eventHandler: (@Sendable (AgentEvent) -> Void)?
 
@@ -1486,10 +1496,17 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         }
 
         let fileSize = (try? fileHandle.seekToEnd()) ?? 0
-        if fileSize < observation.offset {
+        let currentHead = Self.readHeadFingerprint(from: fileHandle)
+        // Reset when the file shrank below our offset (truncation) OR when its
+        // head changed (in-place rewrite/compaction to >= our offset, which the
+        // size check alone can't catch). Either way the stored offset no longer
+        // points at a valid record boundary.
+        if fileSize < observation.offset || currentHead != observation.headFingerprint {
             observation.offset = 0
             observation.pendingBuffer.removeAll(keepingCapacity: false)
             observation.snapshot = CodexRolloutSnapshot()
+            observation.shouldTrimLeadingPartialLine = false
+            observation.headFingerprint = currentHead
         }
 
         do {
@@ -1530,6 +1547,17 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         extractNDJSONLines(from: &buffer)
     }
 
+    /// Read up to `headFingerprintByteCount` leading bytes to fingerprint the
+    /// file's head. Returns empty on failure (treated as "unknown head").
+    private static func readHeadFingerprint(from fileHandle: FileHandle) -> Data {
+        do {
+            try fileHandle.seek(toOffset: 0)
+            return (try fileHandle.read(upToCount: headFingerprintByteCount)) ?? Data()
+        } catch {
+            return Data()
+        }
+    }
+
     private func makeObservation(for target: CodexRolloutWatchTarget) -> Observation {
         let fileURL = URL(fileURLWithPath: target.transcriptPath)
         guard FileManager.default.fileExists(atPath: fileURL.path),
@@ -1542,8 +1570,11 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
         }
 
         let fileSize = (try? fileHandle.seekToEnd()) ?? 0
+        let headFingerprint = Self.readHeadFingerprint(from: fileHandle)
         guard fileSize > initialReadLimit else {
-            return Observation(target: target)
+            // Small file: tail from the start on first poll. Seed the fingerprint
+            // so a later in-place rewrite is detected against this head.
+            return Observation(target: target, headFingerprint: headFingerprint)
         }
 
         let bootstrapSnapshot = bootstrapPromptSnapshot(
@@ -1551,12 +1582,17 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
             fileSize: fileSize
         )
 
+        // Tail-window bootstrap: the non-zero offset assumes this exact head, so
+        // the fingerprint MUST be seeded here — otherwise the first poll would
+        // see a "changed" (empty→actual) head and reset, defeating the tail
+        // window by re-reading the whole large file from 0.
         return Observation(
             target: target,
             offset: fileSize - initialReadLimit,
             pendingBuffer: Data(),
             snapshot: bootstrapSnapshot,
-            shouldTrimLeadingPartialLine: true
+            shouldTrimLeadingPartialLine: true,
+            headFingerprint: headFingerprint
         )
     }
 
