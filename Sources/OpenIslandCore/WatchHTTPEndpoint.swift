@@ -113,7 +113,7 @@ public typealias WatchActiveSessionCountProvider = @Sendable () -> Int
 public final class WatchHTTPEndpoint: @unchecked Sendable {
     private static let logger = Logger(subsystem: "app.openisland", category: "WatchHTTPEndpoint")
     private static let serviceType = "_openisland._tcp"
-    private static let pairingCodeLength = 4
+    static let pairingCodeLength = 4
     private static let pairingCodeExpiry: TimeInterval = 120 // 2 minutes
     /// Max failed /pair attempts before the endpoint locks out further attempts.
     private static let maxPairingFailures = 5
@@ -610,15 +610,31 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
         }
     }
 
-    // MARK: - Private: Auth
+    // MARK: - Auth
+
+    /// Constant-time string equality — visits every byte and does not branch on
+    /// content, so verification time does not reveal where a mismatch occurred.
+    /// STUB (Red): filled in during Green.
+    static func constantTimeEquals(_ lhs: String, _ rhs: String) -> Bool {
+        false
+    }
+
+    /// Extract the bearer token from HTTP headers, or nil if absent/malformed.
+    /// STUB (Red): filled in during Green.
+    static func bearerToken(from headers: [String: String]) -> String? {
+        nil
+    }
+
+    /// Whether `token` is one of the currently valid tokens, compared in
+    /// constant time with no early-out across the set (timing side-channel).
+    /// STUB (Red): filled in during Green.
+    static func isAuthorizedToken(_ token: String, among validTokens: Set<String>) -> Bool {
+        false
+    }
 
     private func authenticateRequest(headers: [String: String]) -> Bool {
-        guard let auth = headers["authorization"] ?? headers["Authorization"],
-              auth.hasPrefix("Bearer ") else {
-            return false
-        }
-        let token = String(auth.dropFirst("Bearer ".count))
-        return validTokens.contains(token)
+        guard let token = Self.bearerToken(from: headers) else { return false }
+        return Self.isAuthorizedToken(token, among: validTokens)
     }
 
     // MARK: - Private: HTTP Helpers
@@ -641,10 +657,16 @@ public final class WatchHTTPEndpoint: @unchecked Sendable {
 
     // MARK: - Private: Pairing Code Generation
 
+    /// Generate a numeric pairing code of the given length (digits only).
+    /// Pure so the keyspace/charset is unit-testable.
+    /// STUB (Red): filled in during Green.
+    static func makePairingCode(length: Int) -> String {
+        ""
+    }
+
     /// Must be called on `queue`.
     private func regeneratePairingCodeUnsafe() {
-        let digits = (0..<Self.pairingCodeLength).map { _ in String(Int.random(in: 0...9)) }
-        currentPairingCode = digits.joined()
+        currentPairingCode = Self.makePairingCode(length: Self.pairingCodeLength)
         pairingCodeGeneratedAt = Date()
         Self.logger.info("New pairing code generated")
     }
