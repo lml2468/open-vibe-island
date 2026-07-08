@@ -9,7 +9,10 @@ slug: jump-fail-open
 upstream: arch-quality-audit-r2 (discovery findings #5, #14)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-08T11:36:19Z
 ---
 
 # Task: jump-fail-open
