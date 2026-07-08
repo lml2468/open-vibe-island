@@ -9,7 +9,10 @@ slug: coordinator-tests
 upstream: arch-quality-audit-r2 (discovery findings #4, #16)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-08T13:07:19Z
 ---
 
 # Task: coordinator-tests
