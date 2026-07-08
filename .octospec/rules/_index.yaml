@@ -10,6 +10,16 @@
 #     priority (desc); truncated low-priority rules inject only their summary line.
 
 rules:
+  - id: session-registry-persistence
+    priority: 75
+    load_bearing: false
+    inject_when:
+      paths:
+        - "Sources/OpenIslandCore/SessionRegistryStore.swift"
+        - "Sources/OpenIslandCore/ClaudeSessionRegistry.swift"
+        - "Sources/OpenIslandCore/CursorSessionRegistry.swift"
+        - "Sources/OpenIslandCore/OpenCodeSessionRegistry.swift"
+      touches: ["registry", "persistence"]
   - id: transcript-reader-perf
     priority: 80
     load_bearing: false
