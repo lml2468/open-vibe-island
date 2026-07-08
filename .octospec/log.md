@@ -2,6 +2,12 @@
 
 Dated, one-line entries for octospec task activity in this repo. Newest first.
 
+- 2026-07-08 — **dedup-registries** (Finish): extracted a shared
+  `SessionRegistryStore` for the 4 near-identical per-agent session persistence
+  layers (Claude/Cursor/OpenCode/Codex); public APIs + on-disk format unchanged,
+  `SessionDiscoveryCoordinator` needed no changes, and `CodexSessionStore` gained
+  its first tests. Sixth slice of `arch-quality-audit`. Gate green (382 tests).
+  Journal: `.octospec/journal/dedup-registries.md`.
 - 2026-07-08 — **perf-battery** (Finish): fixed transcript-reading perf/correctness
   bugs — Codex usage OOM slurp → streaming, Claude fractional-second timestamps,
   O(n^2) line extraction → shared linear extractor, hoisted formatters. Fifth slice

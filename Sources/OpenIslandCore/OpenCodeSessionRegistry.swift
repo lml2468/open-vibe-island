@@ -128,25 +128,10 @@ public final class OpenCodeSessionRegistry: @unchecked Sendable {
     }
 
     public func load() throws -> [OpenCodeTrackedSessionRecord] {
-        guard fileManager.fileExists(atPath: fileURL.path) else {
-            return []
-        }
-
-        let data = try Data(contentsOf: fileURL)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode([OpenCodeTrackedSessionRecord].self, from: data)
+        try SessionRegistryStore.load(from: fileURL, fileManager: fileManager)
     }
 
     public func save(_ records: [OpenCodeTrackedSessionRecord]) throws {
-        let directoryURL = fileURL.deletingLastPathComponent()
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-
-        let data = try encoder.encode(records)
-        try data.write(to: fileURL, options: .atomic)
+        try SessionRegistryStore.save(records, to: fileURL, fileManager: fileManager)
     }
 }
