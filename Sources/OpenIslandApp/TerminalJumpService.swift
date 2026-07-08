@@ -205,6 +205,12 @@ struct TerminalJumpService {
     /// cycling loop to terminate at the wrong tab.
     private static let warpTabCycleSettleDelay = 0.1
 
+    /// Upper bound on any single jump subprocess (`open`, `osascript`, editor
+    /// CLI). A hung child must never block the caller or leak — on timeout the
+    /// process is terminated and the step reports failure so the jump can fall
+    /// through to its next fallback.
+    private static let subprocessTimeout: DispatchTimeInterval = .seconds(5)
+
     private let applicationResolver: ApplicationResolver
     private let appRunningChecker: AppRunningChecker
     private let openAction: OpenAction
@@ -260,15 +266,15 @@ struct TerminalJumpService {
             if let descriptor {
                 switch descriptor.bundleIdentifier {
                 case "com.mitchellh.ghostty":
-                    if try jumpToGhosttyTerminal(target) {
+                    if try attemptAppleScriptJump({ try jumpToGhosttyTerminal(target) }) {
                         return "Focused the matching tmux pane in Ghostty."
                     }
                 case "com.googlecode.iterm2":
-                    if try jumpToITermSession(target) {
+                    if try attemptAppleScriptJump({ try jumpToITermSession(target) }) {
                         return "Focused the matching tmux pane in iTerm."
                     }
                 case "com.apple.Terminal":
-                    if try jumpToTerminalTab(target) {
+                    if try attemptAppleScriptJump({ try jumpToTerminalTab(target) }) {
                         return "Focused the matching tmux pane in Terminal."
                     }
                 default:
@@ -349,7 +355,7 @@ struct TerminalJumpService {
                 try openAction(["-b", "com.anthropic.claudefordesktop"])
                 return "Activated Claude."
             case "com.googlecode.iterm2":
-                if try jumpToITermSession(target) {
+                if try attemptAppleScriptJump({ try jumpToITermSession(target) }) {
                     return "Focused the matching iTerm session."
                 }
             case "com.cmuxterm.app":
@@ -357,11 +363,11 @@ struct TerminalJumpService {
                     return "Focused the matching cmux terminal."
                 }
             case "com.mitchellh.ghostty":
-                if try jumpToGhosttyTerminal(target) {
+                if try attemptAppleScriptJump({ try jumpToGhosttyTerminal(target) }) {
                     return "Focused the matching Ghostty terminal."
                 }
             case "com.apple.Terminal":
-                if try jumpToTerminalTab(target) {
+                if try attemptAppleScriptJump({ try jumpToTerminalTab(target) }) {
                     return "Focused the matching Terminal tab."
                 }
             case "dev.warp.Warp-Stable":
@@ -1200,7 +1206,12 @@ struct TerminalJumpService {
         let maxAttempts = tabCount + 2
 
         for _ in 0..<maxAttempts {
-            warpKeystroker.sendCmdShiftRightBracket()
+            let performed = warpKeystroker.sendCmdShiftRightBracket()
+            if !performed {
+                // Not AX-trusted (or otherwise skipped) — cycling can't work, so
+                // don't burn the full tabCount+2 loop of sleeps and SQLite reads.
+                return "Activated Warp. Precision focus needs Accessibility permission."
+            }
             Thread.sleep(forTimeInterval: Self.warpTabCycleSettleDelay)
             if warpFocusedPaneReader() == targetPaneUUID {
                 return "Focused the matching Warp tab."
@@ -1277,15 +1288,56 @@ struct TerminalJumpService {
         try appleScriptRunner(script)
     }
 
+    /// Run an AppleScript-based jumper, treating an AppleScript failure
+    /// (the signature of an Automation/Apple-Events denial — the user declined
+    /// the consent prompt) as "could not focus" so the caller falls through to
+    /// the plain activation fallback. This preserves fail-open: a denied user
+    /// still gets the app brought forward rather than a hard error. Any other
+    /// error (a real bug) is NOT swallowed — it propagates.
+    private func attemptAppleScriptJump(_ jump: () throws -> Bool) throws -> Bool {
+        do {
+            return try jump()
+        } catch TerminalJumpError.appleScriptFailed {
+            return false
+        }
+    }
+
+    /// Outcome of a bounded subprocess run.
+    enum ProcessOutcome: Equatable {
+        case completed(Int32)
+        case timedOut
+    }
+
+    /// Run `process` to completion, terminating it if it outlives `timeout`.
+    /// Mirrors the bounded-wait precedent in `TerminalSessionAttachmentProbe`
+    /// (`DispatchGroup` + `terminate()`), so a hung `open`/`osascript`/CLI can
+    /// never block the caller indefinitely or leak a `Process`.
+    static func runProcessWithTimeout(
+        _ process: Process,
+        timeout: DispatchTimeInterval
+    ) throws -> ProcessOutcome {
+        let completion = DispatchGroup()
+        completion.enter()
+        process.terminationHandler = { _ in completion.leave() }
+
+        try process.run()
+
+        if completion.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            // Give the terminated child a brief moment to reap so we don't leak it.
+            _ = completion.wait(timeout: .now() + 0.2)
+            return .timedOut
+        }
+        return .completed(process.terminationStatus)
+    }
+
     private static func defaultOpenAction(arguments: [String]) throws {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         task.arguments = arguments
 
-        try task.run()
-        task.waitUntilExit()
-
-        guard task.terminationStatus == 0 else {
+        let outcome = try runProcessWithTimeout(task, timeout: subprocessTimeout)
+        guard case .completed(0) = outcome else {
             throw TerminalJumpError.openFailed(arguments)
         }
     }
@@ -1300,13 +1352,15 @@ struct TerminalJumpService {
         task.standardOutput = outputPipe
         task.standardError = errorPipe
 
-        try task.run()
-        task.waitUntilExit()
+        let outcome = try runProcessWithTimeout(task, timeout: subprocessTimeout)
+        guard case .completed(let status) = outcome else {
+            throw TerminalJumpError.appleScriptFailed("osascript timed out")
+        }
 
         let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-        guard task.terminationStatus == 0 else {
+        guard status == 0 else {
             let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             throw TerminalJumpError.appleScriptFailed(stderr.isEmpty ? script : stderr)
@@ -1323,9 +1377,9 @@ struct TerminalJumpService {
         process.standardError = FileHandle.nullDevice
 
         do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus == 0
+            let outcome = try runProcessWithTimeout(process, timeout: subprocessTimeout)
+            if case .completed(0) = outcome { return true }
+            return false
         } catch {
             return false
         }

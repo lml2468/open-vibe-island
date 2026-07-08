@@ -102,6 +102,17 @@ rules:
         - "Sources/OpenIslandApp/IslandDesignPalette.swift"
         - "Sources/OpenIslandApp/V6ClosedPillShape.swift"
       touches: ["design", "design-tokens", "visual-identity"]
+  - id: terminal-jump-resilience
+    priority: 80
+    load_bearing: true
+    inject_when:
+      paths:
+        - "Sources/OpenIslandApp/TerminalJumpService.swift"
+        - "Sources/OpenIslandApp/TerminalJumpTargetResolver.swift"
+        - "Sources/OpenIslandApp/KeystrokeInjector.swift"
+        - "Sources/OpenIslandApp/ForegroundTerminalSessionProbe.swift"
+        - "Sources/OpenIslandApp/TerminalSessionAttachmentProbe.swift"
+      touches: ["jump", "ax", "timeout", "fail-open"]
   # - id: error-handling
   #   priority: 80
   #   load_bearing: true

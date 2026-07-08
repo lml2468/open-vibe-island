@@ -1,4 +1,5 @@
 import Foundation
+import ApplicationServices
 
 /// Invoked once per retry iteration in the Warp precision jump cycling
 /// loop. The protocol name is historical — earlier implementations posted
@@ -7,7 +8,11 @@ import Foundation
 /// more reliable path (see DefaultKeystrokeInjector below) but the
 /// protocol contract is the same: "advance Warp by one tab".
 public protocol KeystrokeInjector {
-    func sendCmdShiftRightBracket()
+    /// Advance Warp by one tab. Returns `true` if the action was attempted,
+    /// `false` if it was skipped (e.g. the process lacks Accessibility trust),
+    /// so the caller can avoid a wasted cycling loop.
+    @discardableResult
+    func sendCmdShiftRightBracket() -> Bool
 }
 
 /// Production implementation that advances Warp to its next tab by
@@ -54,9 +59,35 @@ public protocol KeystrokeInjector {
 /// required on the first call; macOS presents its standard consent
 /// prompt.
 public struct DefaultKeystrokeInjector: KeystrokeInjector {
-    public init() {}
+    /// Whether this process holds Accessibility trust. Injectable for tests;
+    /// production uses `AXIsProcessTrusted()`.
+    private let isProcessTrusted: @Sendable () -> Bool
+    /// Compiles and runs the AppleScript source, returning an error description
+    /// on failure (nil on success). Injectable for tests.
+    private let runScript: @Sendable (String) -> String?
 
-    public func sendCmdShiftRightBracket() {
+    public init() {
+        self.init(isProcessTrusted: { AXIsProcessTrusted() }, runScript: Self.executeAppleScript)
+    }
+
+    init(
+        isProcessTrusted: @escaping @Sendable () -> Bool,
+        runScript: @escaping @Sendable (String) -> String?
+    ) {
+        self.isProcessTrusted = isProcessTrusted
+        self.runScript = runScript
+    }
+
+    @discardableResult
+    public func sendCmdShiftRightBracket() -> Bool {
+        // Gate on Accessibility trust: `click menu item` via System Events needs
+        // it, and without it the call just errors. Checking first lets the caller
+        // (jumpToWarpPane) skip its multi-second tab-cycling loop entirely.
+        guard isProcessTrusted() else {
+            NSLog("[OpenIsland] Warp tab advance skipped: process is not AX-trusted")
+            return false
+        }
+
         let source = #"""
         tell application id "dev.warp.Warp-Stable" to activate
         delay 0.08
@@ -66,14 +97,22 @@ public struct DefaultKeystrokeInjector: KeystrokeInjector {
             end tell
         end tell
         """#
+        if let error = runScript(source) {
+            NSLog("[OpenIsland] Warp tab advance failed: %@", error)
+        }
+        return true
+    }
+
+    /// Production AppleScript execution via `NSAppleScript`.
+    private static func executeAppleScript(_ source: String) -> String? {
         var error: NSDictionary?
         guard let script = NSAppleScript(source: source) else {
-            NSLog("[OpenIsland] Warp tab advance: NSAppleScript compilation returned nil")
-            return
+            return "NSAppleScript compilation returned nil"
         }
         script.executeAndReturnError(&error)
         if let error {
-            NSLog("[OpenIsland] Warp tab advance failed: %@", String(describing: error))
+            return String(describing: error)
         }
+        return nil
     }
 }
