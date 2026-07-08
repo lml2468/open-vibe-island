@@ -20,7 +20,9 @@ final class KeystrokeInjectorTests: XCTestCase {
 
 final class KeystrokeInjectorSpy: KeystrokeInjector, @unchecked Sendable {
     var callCount = 0
-    func sendCmdShiftRightBracket() {
+    @discardableResult
+    func sendCmdShiftRightBracket() -> Bool {
         callCount += 1
+        return true
     }
 }

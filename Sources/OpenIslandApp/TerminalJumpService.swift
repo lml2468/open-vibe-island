@@ -1277,6 +1277,21 @@ struct TerminalJumpService {
         try appleScriptRunner(script)
     }
 
+    /// Outcome of a bounded subprocess run.
+    enum ProcessOutcome: Equatable {
+        case completed(Int32)
+        case timedOut
+    }
+
+    /// Run `process` to completion, terminating it if it outlives `timeout`.
+    /// STUB (Red): real bounded wait filled in during Green.
+    static func runProcessWithTimeout(
+        _ process: Process,
+        timeout: DispatchTimeInterval
+    ) throws -> ProcessOutcome {
+        .completed(0)
+    }
+
     private static func defaultOpenAction(arguments: [String]) throws {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
