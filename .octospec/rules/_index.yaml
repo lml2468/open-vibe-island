@@ -10,6 +10,13 @@
 #     priority (desc); truncated low-priority rules inject only their summary line.
 
 rules:
+  - id: view-file-decomposition
+    priority: 70
+    load_bearing: false
+    inject_when:
+      paths:
+        - "Sources/OpenIslandApp/Views/**"
+      touches: ["ui", "swiftui", "decomposition"]
   - id: session-registry-persistence
     priority: 75
     load_bearing: false
