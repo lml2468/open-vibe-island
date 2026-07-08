@@ -9,7 +9,10 @@ slug: watch-auth-hardening
 upstream: arch-quality-audit-r2 (discovery finding #20; testable part of #1)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-08T11:07:37Z
 ---
 
 # Task: watch-auth-hardening
