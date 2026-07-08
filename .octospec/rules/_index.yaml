@@ -75,6 +75,14 @@ rules:
         - "Sources/OpenIslandCore/AgentEvent.swift"
         - "Sources/OpenIslandHooks/OpenIslandHooksCLI.swift"
       touches: ["bridge", "ipc", "transport"]
+  - id: watch-endpoint-auth
+    priority: 80
+    load_bearing: true
+    inject_when:
+      paths:
+        - "Sources/OpenIslandCore/WatchHTTPEndpoint.swift"
+        - "Sources/OpenIslandCore/WatchNotificationRelay.swift"
+      touches: ["watch", "auth"]
   - id: session-state-invariants
     priority: 85
     load_bearing: true
