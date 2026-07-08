@@ -54,7 +54,11 @@ public enum CursorHookInstaller {
         hookCommand: String
     ) throws -> CursorHookFileMutation {
         var rootObject = try loadRootObject(from: existingData)
-        rootObject["version"] = 1
+        // Only set the default schema version when the user hasn't authored one;
+        // never clobber an existing top-level `version`.
+        if rootObject["version"] == nil {
+            rootObject["version"] = 1
+        }
 
         var hooksObject = rootObject["hooks"] as? [String: Any] ?? [:]
 
@@ -108,10 +112,11 @@ public enum CursorHookInstaller {
             rootObject["hooks"] = hooksObject
         }
 
-        if rootObject.count == 1, rootObject["version"] != nil {
-            rootObject = [:]
-        }
-
+        // Only drop the file when it is genuinely empty. A remaining top-level
+        // `version` (or any other key) may be user-authored — install no longer
+        // forces `version`, so we can't distinguish "ours" from the user's and
+        // must not delete it. Preserving a stray `{ "version": 1 }` is harmless;
+        // wiping a user's config is not.
         let contents = rootObject.isEmpty ? nil : try serialize(rootObject)
 
         return CursorHookFileMutation(
