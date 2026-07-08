@@ -1549,6 +1549,10 @@ public final class CodexRolloutWatcher: @unchecked Sendable {
 
     /// Read up to `headFingerprintByteCount` leading bytes to fingerprint the
     /// file's head. Returns empty on failure (treated as "unknown head").
+    /// Limitation: a rewrite whose first 256 bytes are byte-identical but
+    /// diverges later is not detected — acceptable because Codex rollout
+    /// rewrites/compactions change the leading `session_meta` line (id/timestamp),
+    /// so the head differs in practice.
     private static func readHeadFingerprint(from fileHandle: FileHandle) -> Data {
         do {
             try fileHandle.seek(toOffset: 0)
