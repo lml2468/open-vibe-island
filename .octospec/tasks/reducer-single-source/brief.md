@@ -9,7 +9,10 @@ slug: reducer-single-source
 upstream: arch-quality-audit-r2 (discovery findings #7, #19)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-08T12:08:38Z
 ---
 
 # Task: reducer-single-source
