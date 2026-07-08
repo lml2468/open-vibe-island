@@ -1328,6 +1328,178 @@ struct CodexSessionTrackingTests {
         #expect(records.first?.sessionID == "codex-session-trailing")
         #expect(records.first?.codexMetadata?.lastAssistantMessage == "Final line without newline.")
     }
+
+    // MARK: - perf-rollout-rewrite slice (arch-quality-audit-r2 #11)
+
+    /// A1: an in-place rewrite/compaction of the rollout file to a size >= the
+    /// stored offset (with a different head) must be detected and re-read from the
+    /// start, surfacing the NEW content — not stale-offset garbage. Today the
+    /// watcher only resets on shrink (`fileSize < offset`), so the rewritten
+    /// content at/after the stale offset is misread.
+    @Test
+    func codexRolloutWatcherDetectsInPlaceRewriteAtOrAboveOffset() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-rewrite-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.eventHandler = { event in
+            Task { await recorder.append(event) }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(sessionID: "codex-rewrite-1", transcriptPath: rolloutURL.path)
+        ])
+
+        // First generation: some appended lines the watcher tails to an offset.
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.894Z",
+                type: "event_msg",
+                payload: ["type": "user_message", "message": "First generation prompt."]
+            ),
+            to: rolloutURL
+        )
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:45.000Z",
+                type: "event_msg",
+                payload: ["type": "task_started"]
+            ),
+            to: rolloutURL
+        )
+        try await Task.sleep(for: .milliseconds(200))
+
+        // In-place rewrite: replace the whole file (different head) with new,
+        // valid content whose total size is >= the previous size, so the
+        // shrink-only guard does NOT fire.
+        let firstGenBytes = (try Data(contentsOf: rolloutURL)).count
+        var rewritten = ""
+        rewritten += rolloutLine(
+            timestamp: "2026-04-02T05:00:00.000Z",
+            type: "event_msg",
+            payload: ["type": "user_message", "message": "Second generation prompt after compaction."]
+        ) + "\n"
+        rewritten += rolloutLine(
+            timestamp: "2026-04-02T05:00:01.000Z",
+            type: "event_msg",
+            payload: ["type": "task_complete", "last_agent_message": "Rewritten rollout completed."]
+        ) + "\n"
+        // Pad to ensure the new file is at least as large as the first generation.
+        while rewritten.utf8.count <= firstGenBytes {
+            rewritten += rolloutLine(
+                timestamp: "2026-04-02T05:00:02.000Z",
+                type: "event_msg",
+                payload: ["type": "user_message", "message": "padding padding padding padding"]
+            ) + "\n"
+        }
+        try Data(rewritten.utf8).write(to: rolloutURL)
+
+        try await Task.sleep(for: .milliseconds(300))
+        watcher.stop()
+
+        let events = await recorder.snapshot()
+        // The new content must surface after the rewrite is detected.
+        #expect(events.contains(where: { $0.trackedSessionCompletion?.summary == "Rewritten rollout completed." }))
+        #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.lastUserPrompt == "Second generation prompt after compaction." }))
+    }
+
+    /// A2: plain appends after the initial sync must still be tracked — the new
+    /// head-fingerprint check must NOT reset on a normal append (whose head is
+    /// unchanged).
+    @Test
+    func codexRolloutWatcherStillTracksPlainAppendsAfterRewriteGuard() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-append-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.eventHandler = { event in
+            Task { await recorder.append(event) }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(sessionID: "codex-append-1", transcriptPath: rolloutURL.path)
+        ])
+
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:44.894Z",
+                type: "event_msg",
+                payload: ["type": "user_message", "message": "Only prompt."]
+            ),
+            to: rolloutURL
+        )
+        try await Task.sleep(for: .milliseconds(150))
+        try appendRolloutLine(
+            rolloutLine(
+                timestamp: "2026-04-02T04:03:46.000Z",
+                type: "event_msg",
+                payload: ["type": "task_complete", "last_agent_message": "Appended completion."]
+            ),
+            to: rolloutURL
+        )
+        try await Task.sleep(for: .milliseconds(200))
+        watcher.stop()
+
+        let events = await recorder.snapshot()
+        #expect(events.contains(where: { $0.trackedMetadataUpdate?.codexMetadata.lastUserPrompt == "Only prompt." }))
+        #expect(events.contains(where: { $0.trackedSessionCompletion?.summary == "Appended completion." }))
+    }
+
+    /// A3: a truncation (file shrinks below the stored offset) must still reset
+    /// and re-read from 0 — the pre-existing behavior, preserved.
+    @Test
+    func codexRolloutWatcherStillResetsOnTruncation() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-island-rollout-truncate-\(UUID().uuidString)", isDirectory: true)
+        let rolloutURL = rootURL.appendingPathComponent("rollout.jsonl")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        try Data().write(to: rolloutURL)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
+
+        let recorder = EventRecorder()
+        let watcher = CodexRolloutWatcher(pollInterval: 0.05)
+        watcher.eventHandler = { event in
+            Task { await recorder.append(event) }
+        }
+        watcher.sync(targets: [
+            CodexRolloutWatchTarget(sessionID: "codex-truncate-1", transcriptPath: rolloutURL.path)
+        ])
+
+        // Grow the file with several lines.
+        for index in 0..<6 {
+            try appendRolloutLine(
+                rolloutLine(
+                    timestamp: String(format: "2026-04-02T04:03:%02d.000Z", 40 + index),
+                    type: "event_msg",
+                    payload: ["type": "user_message", "message": "line \(index)"]
+                ),
+                to: rolloutURL
+            )
+        }
+        try await Task.sleep(for: .milliseconds(200))
+
+        // Truncate to a single short new line (smaller than the prior offset).
+        let truncated = rolloutLine(
+            timestamp: "2026-04-02T06:00:00.000Z",
+            type: "event_msg",
+            payload: ["type": "task_complete", "last_agent_message": "After truncation."]
+        ) + "\n"
+        try Data(truncated.utf8).write(to: rolloutURL)
+
+        try await Task.sleep(for: .milliseconds(300))
+        watcher.stop()
+
+        let events = await recorder.snapshot()
+        #expect(events.contains(where: { $0.trackedSessionCompletion?.summary == "After truncation." }))
+    }
 }
 
 private final class MissingTranscriptFileManager: FileManager, @unchecked Sendable {

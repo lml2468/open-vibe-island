@@ -55,3 +55,21 @@ files that can be tens of MB. Keep them cheap.
   `nonisolated(unsafe)` (it's only ever read via `date(from:)` after config, which
   is thread-safe) rather than reverting to per-call allocation. See
   [[ci-quality-gates]] — warnings-as-errors will flag the un-annotated form.
+
+## Resume-from-offset tailers: check file identity, not just size
+
+- A byte-offset tailer (`CodexRolloutWatcher`) assumes the file is append-only.
+  Resetting only when the file **shrinks** (`fileSize < offset`) misses an
+  in-place rewrite/compaction to a size ≥ the stored offset: the offset stays
+  numerically valid but now points into unrelated bytes, feeding mid-record
+  garbage into the reducer. Also detect a **head change** via a cheap bounded
+  fingerprint (≤256 leading bytes) captured whenever the offset is established;
+  reset (offset→0, clear buffer/snapshot, re-seed fingerprint) when the head
+  differs.
+- Seed the fingerprint at **every** offset-establishing path. The dangerous one is
+  a tail-window bootstrap that sets a **non-zero** offset — forgetting to seed it
+  there makes the first poll see an empty→actual head "change" and reset to 0,
+  re-reading the whole large file and defeating the tail window (a perf regression
+  hiding inside a correctness fix).
+- Keep the identity read bounded (fixed head slice), never a whole-file slurp —
+  same stream-don't-slurp discipline as above.
