@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 import OpenIslandCore
 
 @MainActor
@@ -23,6 +24,15 @@ final class SessionDiscoveryCoordinator {
 
     @ObservationIgnored
     var syntheticClaudeSessionPrefix = ""
+
+    /// Number of times `state` was read while `stateAccessor` was unwired. A
+    /// wiring bug (nil accessor) silently degraded to an empty `SessionState`;
+    /// this counter + a log make that observable.
+    @ObservationIgnored
+    private(set) var unwiredStateAccessReads = 0
+
+    @ObservationIgnored
+    private static let logger = Logger(subsystem: "app.openisland", category: "SessionDiscoveryCoordinator")
 
     @ObservationIgnored
     var onStatusMessage: ((String) -> Void)?
@@ -73,7 +83,14 @@ final class SessionDiscoveryCoordinator {
     private var cursorSessionPersistenceTask: Task<Void, Never>?
 
     private var state: SessionState {
-        get { stateAccessor?() ?? SessionState() }
+        get {
+            if let stateAccessor {
+                return stateAccessor()
+            }
+            unwiredStateAccessReads += 1
+            Self.logger.error("stateAccessor is unwired; falling back to empty SessionState")
+            return SessionState()
+        }
         set {
             stateUpdater?(newValue)
             onStateChanged?()
