@@ -22,8 +22,11 @@ jobs:
       - name: Show Swift Version
         run: swift --version
 
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
       - name: Run CI checks
-        run: zsh scripts/harness.sh ci
+        run: OPEN_ISLAND_REQUIRE_SWIFTLINT=1 zsh scripts/harness.sh ci
 
   package-verify:
     runs-on: macos-26

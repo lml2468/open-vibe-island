@@ -10,6 +10,18 @@
 #     priority (desc); truncated low-priority rules inject only their summary line.
 
 rules:
+  - id: ci-quality-gates
+    priority: 80
+    load_bearing: false
+    inject_when:
+      paths:
+        - "Package.swift"
+        - "scripts/harness.sh"
+        - "scripts/lint-swift.sh"
+        - ".swiftlint.yml"
+        - ".github/workflows/ci.yml"
+        - "Sources/OpenIslandApp/IslandDebugScenario.swift"
+      touches: ["ci", "build-config", "linter"]
   - id: installer-config-safety
     priority: 85
     load_bearing: true

@@ -702,6 +702,9 @@ struct CodexSessionTrackingTests {
                 ]
             ),
         ])
+        // Before the rate-limit token_count arrives, the turn is still awaiting
+        // the agent's response (not yet rate-limited).
+        #expect(initialSnapshot.phase == .running)
         let limitedSnapshot = CodexRolloutReducer.snapshot(for: [
             rolloutLine(
                 timestamp: "2026-04-02T04:03:44.500Z",
