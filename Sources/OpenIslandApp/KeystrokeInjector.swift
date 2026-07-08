@@ -80,7 +80,14 @@ public struct DefaultKeystrokeInjector: KeystrokeInjector {
 
     @discardableResult
     public func sendCmdShiftRightBracket() -> Bool {
-        // STUB (Red): trust gate + real routing filled in during Green.
+        // Gate on Accessibility trust: `click menu item` via System Events needs
+        // it, and without it the call just errors. Checking first lets the caller
+        // (jumpToWarpPane) skip its multi-second tab-cycling loop entirely.
+        guard isProcessTrusted() else {
+            NSLog("[OpenIsland] Warp tab advance skipped: process is not AX-trusted")
+            return false
+        }
+
         let source = #"""
         tell application id "dev.warp.Warp-Stable" to activate
         delay 0.08
