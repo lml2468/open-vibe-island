@@ -10,6 +10,13 @@ typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 final class ProcessMonitoringCoordinator {
     var isResolvingInitialLiveSessions = false
 
+    /// Number of times `state` was read while `stateAccessor` was unwired. A
+    /// wiring bug (nil accessor) silently degraded to an empty `SessionState`;
+    /// this counter + a log make that observable. STUB (Red): incremented in
+    /// Green.
+    @ObservationIgnored
+    private(set) var unwiredStateAccessReads = 0
+
     @ObservationIgnored
     var syntheticClaudeSessionPrefix = ""
 
