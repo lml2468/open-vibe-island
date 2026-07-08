@@ -113,6 +113,16 @@ rules:
         - "Sources/OpenIslandApp/ForegroundTerminalSessionProbe.swift"
         - "Sources/OpenIslandApp/TerminalSessionAttachmentProbe.swift"
       touches: ["jump", "ax", "timeout", "fail-open"]
+  - id: coordinator-wiring
+    priority: 75
+    load_bearing: false
+    inject_when:
+      paths:
+        - "Sources/OpenIslandApp/ProcessMonitoringCoordinator.swift"
+        - "Sources/OpenIslandApp/SessionDiscoveryCoordinator.swift"
+        - "Sources/OpenIslandApp/OverlayUICoordinator.swift"
+        - "Sources/OpenIslandApp/HookInstallationCoordinator.swift"
+      touches: ["coordinator"]
   # - id: error-handling
   #   priority: 80
   #   load_bearing: true
