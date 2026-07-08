@@ -9,7 +9,10 @@ slug: perf-rollout-rewrite
 upstream: arch-quality-audit-r2 (discovery finding #11)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-08T13:33:30Z
 ---
 
 # Task: perf-rollout-rewrite
