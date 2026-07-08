@@ -2,6 +2,11 @@
 
 Dated, one-line entries for octospec task activity in this repo. Newest first.
 
+- 2026-07-08 — **ui-decomposition** (Finish): split the 2,779-LOC `IslandPanelView`
+  → 1,128 by relocating 8 self-contained sub-views/styles/theme into sibling files
+  (verbatim; deletions-only diff). Seventh and FINAL slice of `arch-quality-audit`
+  — all seven slices now shipped. Gate green (382 tests). Journal:
+  `.octospec/journal/ui-decomposition.md`.
 - 2026-07-08 — **dedup-registries** (Finish): extracted a shared
   `SessionRegistryStore` for the 4 near-identical per-agent session persistence
   layers (Claude/Cursor/OpenCode/Codex); public APIs + on-disk format unchanged,
