@@ -80,10 +80,10 @@ struct TerminalTextSender {
     }
 
     private static func ghosttySendScript(text: String, target: JumpTarget) -> String {
-        let terminalSessionID = escapeAppleScript(target.terminalSessionID)
-        let workingDirectory = escapeAppleScript(target.workingDirectory)
-        let paneTitle = escapeAppleScript(target.paneTitle)
-        let escapedText = escapeAppleScript(text)
+        let terminalSessionID = AppleScriptEscaping.escape(target.terminalSessionID)
+        let workingDirectory = AppleScriptEscaping.escape(target.workingDirectory)
+        let paneTitle = AppleScriptEscaping.escape(target.paneTitle)
+        let escapedText = AppleScriptEscaping.escape(text)
 
         return """
         tell application "Ghostty"
@@ -151,13 +151,6 @@ struct TerminalTextSender {
     }
 
     // MARK: - Helpers
-
-    private static func escapeAppleScript(_ value: String?) -> String {
-        guard let value else { return "" }
-        return value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-    }
 
     private static func runAppleScript(_ script: String) -> Bool {
         var error: NSDictionary?

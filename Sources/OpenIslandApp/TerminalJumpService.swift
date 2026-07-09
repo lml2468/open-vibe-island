@@ -436,10 +436,10 @@ struct TerminalJumpService {
                 repeat with aTab in tabs of aWindow
                     repeat with aSession in sessions of aTab
                         set matched to false
-                        if "\(escapeAppleScript(target.terminalSessionID))" is not "" and (id of aSession as text) is "\(escapeAppleScript(target.terminalSessionID))" then
+                        if "\(AppleScriptEscaping.escape(target.terminalSessionID))" is not "" and (id of aSession as text) is "\(AppleScriptEscaping.escape(target.terminalSessionID))" then
                             set matched to true
                         end if
-                        if not matched and "\(escapeAppleScript(target.terminalTTY))" is not "" and (tty of aSession as text) is "\(escapeAppleScript(target.terminalTTY))" then
+                        if not matched and "\(AppleScriptEscaping.escape(target.terminalTTY))" is not "" and (tty of aSession as text) is "\(AppleScriptEscaping.escape(target.terminalTTY))" then
                             set matched to true
                         end if
                         if matched then
@@ -841,9 +841,9 @@ struct TerminalJumpService {
     }
 
     func ghosttyJumpScript(for target: JumpTarget) -> String {
-        let terminalSessionID = escapeAppleScript(target.terminalSessionID)
-        let workingDirectory = escapeAppleScript(target.workingDirectory)
-        let paneTitle = escapeAppleScript(target.paneTitle)
+        let terminalSessionID = AppleScriptEscaping.escape(target.terminalSessionID)
+        let workingDirectory = AppleScriptEscaping.escape(target.workingDirectory)
+        let paneTitle = AppleScriptEscaping.escape(target.paneTitle)
 
         return """
         tell application "Ghostty"
@@ -972,12 +972,12 @@ struct TerminalJumpService {
             activate
             repeat with aWindow in windows
                 repeat with aTab in tabs of aWindow
-                    if "\(escapeAppleScript(target.terminalTTY))" is not "" and (tty of aTab as text) is "\(escapeAppleScript(target.terminalTTY))" then
+                    if "\(AppleScriptEscaping.escape(target.terminalTTY))" is not "" and (tty of aTab as text) is "\(AppleScriptEscaping.escape(target.terminalTTY))" then
                         set selected of aTab to true
                         set frontmost of aWindow to true
                         return "matched"
                     end if
-                    if "\(escapeAppleScript(target.paneTitle))" is not "" and (custom title of aTab as text) contains "\(escapeAppleScript(target.paneTitle))" then
+                    if "\(AppleScriptEscaping.escape(target.paneTitle))" is not "" and (custom title of aTab as text) contains "\(AppleScriptEscaping.escape(target.paneTitle))" then
                         set selected of aTab to true
                         set frontmost of aWindow to true
                         return "matched"
@@ -1383,16 +1383,6 @@ struct TerminalJumpService {
         } catch {
             return false
         }
-    }
-
-    private func escapeAppleScript(_ value: String?) -> String {
-        guard let value else {
-            return ""
-        }
-
-        return value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }
 
