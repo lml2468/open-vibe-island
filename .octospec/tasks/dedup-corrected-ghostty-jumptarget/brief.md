@@ -9,7 +9,10 @@ slug: dedup-corrected-ghostty-jumptarget
 upstream: arch-quality-audit-r2 (discovery finding #9, cluster A — final piece)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-09T06:51:27Z
 ---
 
 # Task: dedup-corrected-ghostty-jumptarget
