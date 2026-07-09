@@ -45,8 +45,7 @@ final class OverlayUICoordinator {
     /// Whether the hardware pointer is currently inside the expanded notification
     /// area. Injectable so notification auto-collapse tests are deterministic
     /// instead of depending on the real cursor (`NSEvent.mouseLocation`). When
-    /// nil, falls back to the real panel check. STUB (Red): not yet consulted at
-    /// the call sites.
+    /// nil, falls back to the real panel check.
     @ObservationIgnored
     var pointerInExpandedAreaProvider: (() -> Bool)?
 
@@ -397,7 +396,7 @@ final class OverlayUICoordinator {
             return
         }
 
-        if overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation) {
+        if isPointerInExpandedArea() {
             notePointerInsideIslandSurface()
             return
         }
@@ -428,7 +427,7 @@ final class OverlayUICoordinator {
 
     var shouldDeferTimedNotificationAutoCollapse: Bool {
         isPointerInsideIslandSurface
-            || overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation)
+            || isPointerInExpandedArea()
     }
 
     private var shouldTrackPointerInsideIslandSurface: Bool {
@@ -438,7 +437,17 @@ final class OverlayUICoordinator {
 
     private var isPointerInsideCurrentNotificationCard: Bool {
         isPointerInsideIslandSurface
-            || overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation)
+            || isPointerInExpandedArea()
+    }
+
+    /// Whether the pointer is inside the expanded notification area. Uses the
+    /// injected `pointerInExpandedAreaProvider` when set (deterministic in tests),
+    /// otherwise the real panel + hardware-cursor check.
+    private func isPointerInExpandedArea() -> Bool {
+        if let pointerInExpandedAreaProvider {
+            return pointerInExpandedAreaProvider()
+        }
+        return overlayPanelController.isPointInExpandedArea(NSEvent.mouseLocation)
     }
 
     // MARK: - Debug snapshots (overlay portion)
