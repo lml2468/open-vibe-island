@@ -9,7 +9,10 @@ slug: dedup-sanitize-mutators
 upstream: arch-quality-audit-r2 (discovery finding #9, cluster B — fourth cut)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-09T08:57:44Z
 ---
 
 # Task: dedup-sanitize-mutators
