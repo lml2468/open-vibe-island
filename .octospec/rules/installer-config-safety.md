@@ -65,6 +65,15 @@ non-destructive. When changing installer code, keep these invariants.
 - Pin each predicate's truth table with a **direct** test (relax `private`→`internal`
   if needed) so a future edit to a predicate is caught even when the higher-level
   installer round-trip suites don't exercise that exact marker/gate combination.
+- When two installers share **byte-identical hook-array traversal** but a divergent
+  managed-vs-user decision (as Claude and Codex did), extract the traversal into a
+  shared helper (`HookGroupSanitizer`) that takes the leaf predicate as a
+  `([String: Any]) -> Bool` **closure** — do NOT inline the gating into the shared
+  walk. Each installer keeps its own `isManagedHook`/`isManagedHookForInstall` and
+  passes it in. The traversal must be a *byte-equivalent* relocation (partial
+  survival, drop-empty-group, drop non-dict, two-level contains). The hazard to
+  check at Verify is a **swapped closure** (a delegate passing the wrong leaf, e.g.
+  `sanitize` passing the install-time leaf) — check each delegate line-by-line.
 
 ## Bounded, atomic writes
 
