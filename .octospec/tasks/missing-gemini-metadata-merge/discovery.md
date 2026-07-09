@@ -8,7 +8,7 @@ timestamp: 2026-07-09T13:20:00Z
 slug: missing-gemini-metadata-merge
 upstream: arch-quality-audit-r2 (surfaced while scoping cluster C #10)
 source: self
-status: open
+status: resolved
 ---
 
 # Finding: missing `mergeGeminiMetadata`
