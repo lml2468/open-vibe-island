@@ -116,10 +116,7 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
             hookCommand: command,
             enabledCodexHooksFeature: featureMutation.featureEnabledByInstaller
         )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
+        try ConfigManifestStore.write(manifest, to: manifestURL)
         if fileManager.fileExists(atPath: legacyManifestURL.path) {
             try fileManager.removeItem(at: legacyManifestURL)
         }
@@ -172,14 +169,7 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
     }
 
     private func loadManifest(at url: URL) throws -> CodexHookInstallerManifest? {
-        guard fileManager.fileExists(atPath: url.path) else {
-            return nil
-        }
-
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(CodexHookInstallerManifest.self, from: data)
+        try ConfigManifestStore.load(at: url, fileManager: fileManager)
     }
 
     private func resolvedManifestURL() -> URL {
@@ -193,15 +183,11 @@ public final class CodexHookInstallationManager: @unchecked Sendable {
     }
 
     private func resolvedHooksBinaryURL(explicitURL: URL?) -> URL? {
-        if let explicitURL {
-            return explicitURL.standardizedFileURL
-        }
-
-        guard fileManager.isExecutableFile(atPath: managedHooksBinaryURL.path) else {
-            return nil
-        }
-
-        return managedHooksBinaryURL
+        ConfigManifestStore.resolvedBinaryURL(
+            managedBinaryURL: managedHooksBinaryURL,
+            explicitURL: explicitURL,
+            fileManager: fileManager
+        )
     }
 
     private func backupFile(at url: URL) throws {
