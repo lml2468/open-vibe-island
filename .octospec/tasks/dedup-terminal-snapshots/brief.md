@@ -8,7 +8,7 @@ timestamp: 2026-07-09T05:03:47Z
 slug: dedup-terminal-snapshots
 upstream: arch-quality-audit-r2 (discovery finding #9, cluster A)
 source: self
-revision: 1
+revision: 2
 approvals:
   - revision: 1
     by: lml2468
@@ -93,27 +93,41 @@ de-duplication that shrinks cluster A further.
 <!-- Each item stated so it can become a failing test in Implement's Red step. -->
 - **A1 — the two snapshot types are shared top-level types with their exact
   fields.** `GhosttyTerminalSnapshot(sessionID:workingDirectory:title:)` and
-  `TerminalTabSnapshot(tty:customTitle:)` exist as top-level `Sendable` structs
-  (in `TerminalProbeSupport.swift`) and construct + expose those exact stored
-  properties. *(Testable: a unit test constructs each and reads its fields; the
-  memberwise init + field names are the contract. Fails first — as top-level types
-  they don't exist yet.)*
+  `TerminalTabSnapshot(tty:customTitle:)` exist as top-level `Sendable` structs in
+  `TerminalProbeSupport.swift` and construct + expose those exact stored
+  properties. *(N/A(test): a pure verbatim type relocation — a unit test can only
+  reference the type after it's moved, so it fails to COMPILE (not assert) on the
+  pre-move tree, which is not a valid Red. Proven instead by (a) the moved struct
+  definitions being byte-identical to the deleted ones, and (b) A4 — the ~40
+  existing references + heavily-tested Probe suite compiling and passing.)*
 - **A2 — the external qualified names still resolve (shim compatibility).**
   `TerminalSessionAttachmentProbe.GhosttyTerminalSnapshot` and
   `TerminalSessionAttachmentProbe.TerminalTabSnapshot` still refer to the shared
   types (so `ProcessMonitoringCoordinator` and the existing test suites compile
-  unchanged). *(Testable: a test references the qualified names and assigns a
-  shared-type value to them / uses them in `SnapshotAvailability`. Fails first if
-  the shim is missing.)*
-- **A3 — no duplicated struct definition remains.** Neither file defines a nested
-  `GhosttyTerminalSnapshot`/`TerminalTabSnapshot` struct; the definitions live in
-  exactly one place. *(Verifiable by grep — only the shared defs + typealiases
-  remain.)*
-- **A4 — behavior neutral + gate green.** The existing
-  `TerminalSessionAttachmentProbeTests` and `AppModelSessionListTests` pass
-  unchanged; `swift build` + `swift test` pass under the repo gate
-  (warnings-as-errors + `swiftlint --strict`). *(N/A(test): the gate itself; the
-  existing suites are the behavior-neutral proof.)*
+  unchanged). *(N/A(test): a compile-time compatibility property, not an
+  assertable runtime behavior — its proof is that the unchanged callers/tests in
+  A4 still build and pass. A dedicated test would only restate the compile.)*
+- **A3 — no duplicated struct definition remains.** Neither probe file defines a
+  nested `GhosttyTerminalSnapshot`/`TerminalTabSnapshot` struct; the definitions
+  live in exactly one place (the shared types), with `typealias` shims only.
+  *(Verifiable by grep — only the shared defs + typealiases remain.)*
+- **A4 — behavior neutral + gate green (the real proof).** The existing
+  `TerminalSessionAttachmentProbeTests` (~40 cases) and `AppModelSessionListTests`
+  pass **unchanged**, and the moved struct bodies are byte-identical to the
+  deleted ones (a verbatim relocation); `swift build` + `swift test` pass under
+  the repo gate (warnings-as-errors + `swiftlint --strict`). *(N/A(test): the gate
+  + the pre-existing suites ARE the behavior-neutral proof for a pure type move —
+  same discipline as the merged `ui-decomposition` slice.)*
 
 ## Iteration Log
 <!-- Add an entry ONLY when an iteration changes the spec. -->
+- r2 (Implement→Plan, spec-changing): the r1 Acceptance framed A1/A2 as
+  failing-first unit tests, but this slice is a **pure verbatim type relocation**.
+  A test referencing the moved top-level type fails to *compile* on the pre-move
+  tree (an invalid Red per octospec — must fail on an assertion), and a struct
+  move has no wrong-value to assert against. Faking a Red would violate TDD
+  honesty. Reframed A1/A2 as `N/A(test)` with the honest reason and made A4 (the
+  existing ~40 references + tested Probe suite compiling/passing, plus a
+  byte-identical moved-body diff) the behavior-neutral proof — mirroring the
+  `ui-decomposition` slice's verbatim-relocation approach. No change to the Goal,
+  Load-bearing list, or Out-of-scope. Needs re-approval before Implement.
