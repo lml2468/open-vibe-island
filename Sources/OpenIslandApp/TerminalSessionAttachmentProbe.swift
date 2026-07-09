@@ -1310,9 +1310,7 @@ struct TerminalSessionAttachmentProbe {
     }
 
     private func normalizedTerminalName(for value: String?) -> String? {
-        value?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        TerminalProbeSupport.normalizedTerminalName(for: value)
     }
 
     private func isRunning(bundleIdentifier: String) -> Bool {
