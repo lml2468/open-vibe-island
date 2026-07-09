@@ -1283,13 +1283,11 @@ struct TerminalSessionAttachmentProbe {
     }
 
     private func isRunning(bundleIdentifier: String) -> Bool {
-        NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty == false
+        appRunningChecker(bundleIdentifier)
     }
 
     private func runAppleScript(_ script: String) throws -> String {
-        // STUB (Red): still uses the hardcoded impl; Green routes through the
-        // injected `appleScriptRunner`.
-        try Self.defaultAppleScriptRunner(script: script)
+        try appleScriptRunner(script)
     }
 
     static func defaultAppleScriptRunner(script: String) throws -> String {
