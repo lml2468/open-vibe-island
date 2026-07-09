@@ -1538,23 +1538,7 @@ final class AppModel {
 
         // Push relevant events to the Watch/iPhone via the relay
         if let relay = watchRelay {
-            let eventSessionID: String? = {
-                switch event {
-                case let .sessionStarted(p): return p.sessionID
-                case let .activityUpdated(p): return p.sessionID
-                case let .permissionRequested(p): return p.sessionID
-                case let .questionAsked(p): return p.sessionID
-                case let .sessionCompleted(p): return p.sessionID
-                case let .jumpTargetUpdated(p): return p.sessionID
-                case let .sessionMetadataUpdated(p): return p.sessionID
-                case let .claudeSessionMetadataUpdated(p): return p.sessionID
-                case let .geminiSessionMetadataUpdated(p): return p.sessionID
-                case let .openCodeSessionMetadataUpdated(p): return p.sessionID
-                case let .cursorSessionMetadataUpdated(p): return p.sessionID
-                case let .actionableStateResolved(p): return p.sessionID
-                }
-            }()
-            let session = eventSessionID.flatMap { state.session(id: $0) }
+            let session = state.session(id: event.sessionID)
             relay.notifyEvent(event, session: session)
         }
 

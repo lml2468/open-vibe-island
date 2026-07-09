@@ -356,48 +356,11 @@ final class ProcessMonitoringCoordinator {
     // MARK: - Event helpers
 
     func markSessionAttached(for event: AgentEvent) {
-        guard let sessionID = sessionID(for: event) else {
-            return
-        }
-
-        _ = state.reconcileAttachmentStates([sessionID: .attached])
+        _ = state.reconcileAttachmentStates([event.sessionID: .attached])
     }
 
     func markSessionProcessAlive(for event: AgentEvent) {
-        guard let sessionID = sessionID(for: event) else {
-            return
-        }
-
-        state.markSingleSessionAlive(sessionID: sessionID)
-    }
-
-    private func sessionID(for event: AgentEvent) -> String? {
-        switch event {
-        case let .sessionStarted(payload):
-            payload.sessionID
-        case let .activityUpdated(payload):
-            payload.sessionID
-        case let .permissionRequested(payload):
-            payload.sessionID
-        case let .questionAsked(payload):
-            payload.sessionID
-        case let .sessionCompleted(payload):
-            payload.sessionID
-        case let .jumpTargetUpdated(payload):
-            payload.sessionID
-        case let .sessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .claudeSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .geminiSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .openCodeSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .cursorSessionMetadataUpdated(payload):
-            payload.sessionID
-        case let .actionableStateResolved(payload):
-            payload.sessionID
-        }
+        state.markSingleSessionAlive(sessionID: event.sessionID)
     }
 
     // MARK: - Process liveness
