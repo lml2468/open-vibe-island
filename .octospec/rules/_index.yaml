@@ -123,6 +123,13 @@ rules:
         - "Sources/OpenIslandApp/OverlayUICoordinator.swift"
         - "Sources/OpenIslandApp/HookInstallationCoordinator.swift"
       touches: ["coordinator"]
+  - id: process-discovery-perf
+    priority: 78
+    load_bearing: false
+    inject_when:
+      paths:
+        - "Sources/OpenIslandApp/ActiveAgentProcessDiscovery.swift"
+      touches: ["process-discovery"]
   # - id: error-handling
   #   priority: 80
   #   load_bearing: true
