@@ -63,7 +63,7 @@ public enum GeminiHookInstaller {
         }
 
         rootObject["hooks"] = hooksObject
-        let data = try serialize(rootObject)
+        let data = try JSONConfigSerialization.serialize(rootObject)
         return GeminiHookFileMutation(
             contents: data,
             changed: data != existingData,
@@ -103,7 +103,7 @@ public enum GeminiHookInstaller {
             rootObject["hooks"] = hooksObject
         }
 
-        let contents = rootObject.isEmpty ? nil : try serialize(rootObject)
+        let contents = rootObject.isEmpty ? nil : try JSONConfigSerialization.serialize(rootObject)
         return GeminiHookFileMutation(
             contents: contents,
             changed: mutated || contents != existingData,
@@ -120,10 +120,6 @@ public enum GeminiHookInstaller {
         }
 
         return rootObject
-    }
-
-    private static func serialize(_ object: [String: Any]) throws -> Data {
-        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
 
     private static func managedGroup(matcher: String?, hookCommand: String) -> [String: Any] {

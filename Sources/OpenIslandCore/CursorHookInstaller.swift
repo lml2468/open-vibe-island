@@ -70,7 +70,7 @@ public enum CursorHookInstaller {
         }
 
         rootObject["hooks"] = hooksObject
-        let data = try serialize(rootObject)
+        let data = try JSONConfigSerialization.serialize(rootObject)
 
         return CursorHookFileMutation(
             contents: data,
@@ -117,7 +117,7 @@ public enum CursorHookInstaller {
         // forces `version`, so we can't distinguish "ours" from the user's and
         // must not delete it. Preserving a stray `{ "version": 1 }` is harmless;
         // wiping a user's config is not.
-        let contents = rootObject.isEmpty ? nil : try serialize(rootObject)
+        let contents = rootObject.isEmpty ? nil : try JSONConfigSerialization.serialize(rootObject)
 
         return CursorHookFileMutation(
             contents: contents,
@@ -135,10 +135,6 @@ public enum CursorHookInstaller {
         }
 
         return rootObject
-    }
-
-    private static func serialize(_ object: [String: Any]) throws -> Data {
-        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
 
     private static func isManagedHook(_ hook: [String: Any], managedCommand: String?) -> Bool {

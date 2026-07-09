@@ -91,7 +91,7 @@ public enum ClaudeHookInstaller {
         }
 
         rootObject["hooks"] = hooksObject
-        let data = try serialize(rootObject)
+        let data = try JSONConfigSerialization.serialize(rootObject)
 
         return ClaudeHookFileMutation(
             contents: data,
@@ -139,7 +139,7 @@ public enum ClaudeHookInstaller {
             rootObject["hooks"] = hooksObject
         }
 
-        let contents = rootObject.isEmpty ? nil : try serialize(rootObject)
+        let contents = rootObject.isEmpty ? nil : try JSONConfigSerialization.serialize(rootObject)
         return ClaudeHookFileMutation(
             contents: contents,
             changed: mutated || contents != existingData,
@@ -159,10 +159,6 @@ public enum ClaudeHookInstaller {
         }
 
         return rootObject
-    }
-
-    private static func serialize(_ object: [String: Any]) throws -> Data {
-        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
 
     private static func sanitize(groups: [Any], managedCommand: String?) -> [[String: Any]] {
