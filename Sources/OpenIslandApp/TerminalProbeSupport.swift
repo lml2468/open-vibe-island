@@ -27,20 +27,44 @@ enum TerminalProbeSupport {
     }
 
     /// Trimmed value, or nil if nil / whitespace-only.
-    /// STUB (Red): real impl filled in during Green.
     static func nonEmptyValue(_ value: String?) -> String? {
-        nil
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     /// Reconcile a session's jump target against a discovered Terminal.app tab.
     /// Returns the corrected target if any field changed, else nil (and nil when
     /// the session has no jump target).
-    /// STUB (Red): real impl filled in during Green.
     static func correctedTerminalJumpTarget(
         for session: AgentSession,
         snapshot: TerminalTabSnapshot
     ) -> JumpTarget? {
-        nil
+        guard var jumpTarget = session.jumpTarget else {
+            return nil
+        }
+
+        var changed = false
+
+        if normalizedTerminalName(for: jumpTarget.terminalApp) != "terminal" {
+            jumpTarget.terminalApp = "Terminal"
+            changed = true
+        }
+
+        if nonEmptyValue(jumpTarget.terminalTTY) != snapshot.tty {
+            jumpTarget.terminalTTY = snapshot.tty
+            changed = true
+        }
+
+        if let title = nonEmptyValue(snapshot.customTitle),
+           title != jumpTarget.paneTitle {
+            jumpTarget.paneTitle = title
+            changed = true
+        }
+
+        return changed ? jumpTarget : nil
     }
 
     /// Run an AppleScript via `/usr/bin/osascript`, bounded by `timeout`. Shared
