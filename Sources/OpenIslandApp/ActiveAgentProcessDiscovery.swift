@@ -66,13 +66,29 @@ struct ActiveAgentProcessDiscovery {
         var snapshots: [ProcessSnapshot] = []
         var claimedKeys: Set<String> = []
 
+        // Lazily compute the global tmux context at most once per sweep, and only
+        // if some agent actually needs tmux resolution (preserves the "no tmux
+        // subprocesses when nothing needs them" behavior).
+        var cachedTmuxContext: TmuxSweepContext??
+        let tmuxContext: () -> TmuxSweepContext? = {
+            if let cached = cachedTmuxContext {
+                return cached
+            }
+            let context = self.makeTmuxContext(
+                processes: processes,
+                processesByPID: processesByPID
+            )
+            cachedTmuxContext = .some(context)
+            return context
+        }
+
         for process in processes {
             guard process.terminalTTY != nil else {
                 continue
             }
 
             if isCodexProcess(command: process.command) {
-                guard let snapshot = codexSnapshot(for: process, processesByPID: processesByPID) else {
+                guard let snapshot = codexSnapshot(for: process, processesByPID: processesByPID, tmuxContext: tmuxContext) else {
                     continue
                 }
 
@@ -86,7 +102,7 @@ struct ActiveAgentProcessDiscovery {
             }
 
             if isClaudeProcess(command: process.command) {
-                guard let snapshot = claudeSnapshot(for: process, processesByPID: processesByPID) else {
+                guard let snapshot = claudeSnapshot(for: process, processesByPID: processesByPID, tmuxContext: tmuxContext) else {
                     continue
                 }
 
@@ -100,7 +116,7 @@ struct ActiveAgentProcessDiscovery {
             }
 
             if isCursorAgentProcess(command: process.command) {
-                guard let snapshot = cursorSnapshot(for: process, processesByPID: processesByPID) else {
+                guard let snapshot = cursorSnapshot(for: process, processesByPID: processesByPID, tmuxContext: tmuxContext) else {
                     continue
                 }
 
@@ -162,17 +178,7 @@ struct ActiveAgentProcessDiscovery {
                     terminalApp: terminalApp(for: process, processesByPID: processesByPID)
                 )
 
-                if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
-                    if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                        agentTTY: agentTTY,
-                        processes: processesByPID.values.map { $0 },
-                        processesByPID: processesByPID
-                    ) {
-                        snapshot.terminalApp = hostTerminalApp
-                        snapshot.tmuxTarget = tmuxTarget
-                        snapshot.tmuxSocketPath = socketPath
-                    }
-                }
+                applyTmuxInfo(to: &snapshot, process: process, tmuxContext: tmuxContext)
 
                 snapshots.append(snapshot)
                 continue
@@ -248,7 +254,8 @@ struct ActiveAgentProcessDiscovery {
 
     private func codexSnapshot(
         for process: RunningProcess,
-        processesByPID: [String: RunningProcess]
+        processesByPID: [String: RunningProcess],
+        tmuxContext: () -> TmuxSweepContext?
     ) -> ProcessSnapshot? {
         guard let lsofOutput = lsofOutput(pid: process.pid),
               let transcriptPath = bestCodexTranscriptPath(in: lsofOutput),
@@ -264,25 +271,15 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: terminalApp(for: process, processesByPID: processesByPID)
         )
 
-        // If terminalApp is nil and we have a TTY, try to resolve tmux info
-        if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
-            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                agentTTY: agentTTY,
-                processes: processesByPID.values.map { $0 },
-                processesByPID: processesByPID
-            ) {
-                snapshot.terminalApp = hostTerminalApp
-                snapshot.tmuxTarget = tmuxTarget
-                snapshot.tmuxSocketPath = socketPath
-            }
-        }
+        applyTmuxInfo(to: &snapshot, process: process, tmuxContext: tmuxContext)
 
         return snapshot
     }
 
     private func cursorSnapshot(
         for process: RunningProcess,
-        processesByPID: [String: RunningProcess]
+        processesByPID: [String: RunningProcess],
+        tmuxContext: () -> TmuxSweepContext?
     ) -> ProcessSnapshot? {
         let lsofOutput = lsofOutput(pid: process.pid)
         let workingDirectory = lsofOutput.flatMap(workingDirectory(from:))
@@ -300,17 +297,7 @@ struct ActiveAgentProcessDiscovery {
             terminalApp: terminalApp(for: process, processesByPID: processesByPID)
         )
 
-        if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
-            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                agentTTY: agentTTY,
-                processes: processesByPID.values.map { $0 },
-                processesByPID: processesByPID
-            ) {
-                snapshot.terminalApp = hostTerminalApp
-                snapshot.tmuxTarget = tmuxTarget
-                snapshot.tmuxSocketPath = socketPath
-            }
-        }
+        applyTmuxInfo(to: &snapshot, process: process, tmuxContext: tmuxContext)
 
         return snapshot
     }
@@ -336,7 +323,8 @@ struct ActiveAgentProcessDiscovery {
 
     private func claudeSnapshot(
         for process: RunningProcess,
-        processesByPID: [String: RunningProcess]
+        processesByPID: [String: RunningProcess],
+        tmuxContext: () -> TmuxSweepContext?
     ) -> ProcessSnapshot? {
         let lsofOutput = lsofOutput(pid: process.pid)
         let workingDirectory = lsofOutput.flatMap(workingDirectory(from:))
@@ -366,18 +354,7 @@ struct ActiveAgentProcessDiscovery {
             transcriptPath: transcriptPath
         )
 
-        // If terminalApp is nil and we have a TTY, try to resolve tmux info
-        if snapshot.terminalApp == nil, let agentTTY = process.terminalTTY {
-            if let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(
-                agentTTY: agentTTY,
-                processes: processesByPID.values.map { $0 },
-                processesByPID: processesByPID
-            ) {
-                snapshot.terminalApp = hostTerminalApp
-                snapshot.tmuxTarget = tmuxTarget
-                snapshot.tmuxSocketPath = socketPath
-            }
-        }
+        applyTmuxInfo(to: &snapshot, process: process, tmuxContext: tmuxContext)
 
         return snapshot
     }
@@ -855,20 +832,30 @@ struct ActiveAgentProcessDiscovery {
         return path.isEmpty ? nil : path
     }
 
-    private func resolveTmuxInfo(
-        agentTTY: String,
+    /// Global tmux state for one `discover()` sweep. `list-panes -a` and
+    /// `list-clients` return the same output for every agent, so they are run
+    /// once and cached here; only the `paneTTY` lookup is per-agent.
+    private struct TmuxSweepContext {
+        let socketPath: String?
+        let paneTTYToTarget: [String: String]
+        let hostTerminalApp: String?
+    }
+
+    /// Build the per-sweep tmux context: resolve the tmux binary, find the
+    /// server socket, and run `list-panes -a` + `list-clients` exactly once each.
+    /// Returns nil if tmux isn't available.
+    private func makeTmuxContext(
         processes: [RunningProcess],
         processesByPID: [String: RunningProcess]
-    ) -> (target: String, hostTerminalApp: String?, socketPath: String?)? {
+    ) -> TmuxSweepContext? {
         guard let tmuxPath = resolveTmuxPath() else {
             return nil
         }
 
-        // Find tmux-server process to extract socket path if custom
+        // Find tmux-server process to extract socket path if custom (first match).
         var socketPath: String? = nil
         for process in processes {
             if isTmuxServerProcess(command: process.command) {
-                // Extract socket path from tmux-server command line
                 let parts = process.command.split(separator: " ").map(String.init)
                 for (index, part) in parts.enumerated() {
                     if (part == "-S" || part == "-L"), parts.indices.contains(index + 1) {
@@ -880,20 +867,54 @@ struct ActiveAgentProcessDiscovery {
             }
         }
 
-        // Query tmux list-panes to find the pane matching our TTY
-        guard let tmuxTarget = queryTmuxTarget(agentTTY: agentTTY, tmuxPath: tmuxPath, socketPath: socketPath) else {
-            return nil
-        }
-
-        // Find the terminal app hosting the tmux client connected to this pane
-        guard let hostTerminalApp = findTmuxClientTerminal(tmuxPath: tmuxPath, socketPath: socketPath, processesByPID: processesByPID) else {
-            return nil
-        }
-
-        return (tmuxTarget, hostTerminalApp, socketPath)
+        return TmuxSweepContext(
+            socketPath: socketPath,
+            paneTTYToTarget: tmuxPaneMap(tmuxPath: tmuxPath, socketPath: socketPath),
+            hostTerminalApp: findTmuxClientTerminal(
+                tmuxPath: tmuxPath,
+                socketPath: socketPath,
+                processesByPID: processesByPID
+            )
+        )
     }
 
-    private func queryTmuxTarget(agentTTY: String, tmuxPath: String, socketPath: String?) -> String? {
+    /// Pure per-agent resolution against a precomputed sweep context: look up the
+    /// pane target by TTY and pair it with the shared host terminal. Returns nil
+    /// (no tmux info) unless BOTH a matching pane and a host terminal exist —
+    /// preserving the original `resolveTmuxInfo` semantics.
+    private func resolveTmuxInfo(
+        agentTTY: String,
+        context: TmuxSweepContext
+    ) -> (target: String, hostTerminalApp: String?, socketPath: String?)? {
+        guard let target = context.paneTTYToTarget[agentTTY],
+              let hostTerminalApp = context.hostTerminalApp else {
+            return nil
+        }
+        return (target, hostTerminalApp, context.socketPath)
+    }
+
+    /// Fill in tmux-derived terminal info on a snapshot whose terminal is
+    /// otherwise unresolved. `tmuxContext` is a lazy per-sweep provider so the
+    /// global tmux queries run at most once, and only when an agent needs them.
+    private func applyTmuxInfo(
+        to snapshot: inout ProcessSnapshot,
+        process: RunningProcess,
+        tmuxContext: () -> TmuxSweepContext?
+    ) {
+        guard snapshot.terminalApp == nil,
+              let agentTTY = process.terminalTTY,
+              let context = tmuxContext(),
+              let (tmuxTarget, hostTerminalApp, socketPath) = resolveTmuxInfo(agentTTY: agentTTY, context: context) else {
+            return
+        }
+        snapshot.terminalApp = hostTerminalApp
+        snapshot.tmuxTarget = tmuxTarget
+        snapshot.tmuxSocketPath = socketPath
+    }
+
+    /// Parse `tmux list-panes -a` once into a `paneTTY → target` map (first match
+    /// per TTY wins, matching the original first-hit `queryTmuxTarget` behavior).
+    private func tmuxPaneMap(tmuxPath: String, socketPath: String?) -> [String: String] {
         var args: [String] = ["list-panes", "-a", "-F", "#{pane_tty}\t#{session_name}:#{window_index}.#{pane_index}"]
 
         if let socketPath = socketPath {
@@ -901,9 +922,10 @@ struct ActiveAgentProcessDiscovery {
         }
 
         guard let output = commandRunner(tmuxPath, args) else {
-            return nil
+            return [:]
         }
 
+        var map: [String: String] = [:]
         for line in output.split(separator: "\n") {
             let parts = line.split(separator: "\t", maxSplits: 1).map(String.init)
             guard parts.count == 2 else {
@@ -913,12 +935,12 @@ struct ActiveAgentProcessDiscovery {
             let ptrTTY = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
             let target = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
 
-            if ptrTTY == agentTTY {
-                return target
+            if map[ptrTTY] == nil {
+                map[ptrTTY] = target
             }
         }
 
-        return nil
+        return map
     }
 
     private func findTmuxClientTerminal(
