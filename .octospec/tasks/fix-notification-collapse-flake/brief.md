@@ -9,7 +9,10 @@ slug: fix-notification-collapse-flake
 upstream: arch-quality-audit-r2 (surfaced during coordinator-tests)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-09T01:36:33Z
 ---
 
 # Task: fix-notification-collapse-flake
