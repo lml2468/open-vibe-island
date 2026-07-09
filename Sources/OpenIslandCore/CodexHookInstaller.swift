@@ -392,11 +392,11 @@ public enum CodexHookInstaller {
 
     static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
         let normalized = command.lowercased()
-        if normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks") {
+        if OpenIslandHookMarkers.hasHooksMarker(normalized) {
             return true
         }
 
-        return normalized.contains("open-island-bridge") || normalized.contains("vibe-island-bridge")
+        return OpenIslandHookMarkers.hasBridgeMarker(normalized)
     }
 
     private static func sectionRange(named section: String, lines: [String]) -> Range<Int>? {

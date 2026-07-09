@@ -142,7 +142,7 @@ public enum CursorHookInstaller {
 
     static func isOpenIslandCursorHookCommand(_ command: String) -> Bool {
         let normalized = command.lowercased()
-        return (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks"))
+        return OpenIslandHookMarkers.hasHooksMarker(normalized)
             && normalized.contains("cursor")
     }
 }

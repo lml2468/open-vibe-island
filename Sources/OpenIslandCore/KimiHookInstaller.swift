@@ -207,10 +207,8 @@ public enum KimiHookInstaller {
             return false
         }
 
-        return normalized.contains("openislandhooks")
-            || normalized.contains("vibeislandhooks")
-            || normalized.contains("open-island-bridge")
-            || normalized.contains("vibe-island-bridge")
+        return OpenIslandHookMarkers.hasHooksMarker(normalized)
+            || OpenIslandHookMarkers.hasBridgeMarker(normalized)
     }
 
     private static func renderManagedBlock(event: String, matcher: String?, command: String) -> String {

@@ -5,13 +5,15 @@ import Foundation
 /// each installer — only the brand-alias literals are centralized so a new alias
 /// is added in one place. Callers pass an already-lowercased string.
 enum OpenIslandHookMarkers {
-    /// STUB (Red): real matching filled in during Green.
+    /// True if the (already-lowercased) command contains an Open Island hooks-CLI
+    /// marker (`openislandhooks` / `vibeislandhooks`).
     static func hasHooksMarker(_ normalized: String) -> Bool {
-        false
+        normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks")
     }
 
-    /// STUB (Red): real matching filled in during Green.
+    /// True if the (already-lowercased) command contains an Open Island bridge
+    /// marker (`open-island-bridge` / `vibe-island-bridge`).
     static func hasBridgeMarker(_ normalized: String) -> Bool {
-        false
+        normalized.contains("open-island-bridge") || normalized.contains("vibe-island-bridge")
     }
 }
