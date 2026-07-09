@@ -112,14 +112,7 @@ public enum GeminiHookInstaller {
     }
 
     private static func loadRootObject(from data: Data?) throws -> [String: Any] {
-        guard let data else { return [:] }
-
-        let object = try JSONSerialization.jsonObject(with: data)
-        guard let rootObject = object as? [String: Any] else {
-            throw GeminiHookInstallerError.invalidSettingsJSON
-        }
-
-        return rootObject
+        try JSONConfigSerialization.loadRootObject(from: data, invalidError: GeminiHookInstallerError.invalidSettingsJSON)
     }
 
     private static func managedGroup(matcher: String?, hookCommand: String) -> [String: Any] {

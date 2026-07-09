@@ -127,14 +127,7 @@ public enum CursorHookInstaller {
     }
 
     private static func loadRootObject(from data: Data?) throws -> [String: Any] {
-        guard let data else { return [:] }
-
-        let object = try JSONSerialization.jsonObject(with: data)
-        guard let rootObject = object as? [String: Any] else {
-            throw CursorHookInstallerError.invalidHooksJSON
-        }
-
-        return rootObject
+        try JSONConfigSerialization.loadRootObject(from: data, invalidError: CursorHookInstallerError.invalidHooksJSON)
     }
 
     private static func isManagedHook(_ hook: [String: Any], managedCommand: String?) -> Bool {
