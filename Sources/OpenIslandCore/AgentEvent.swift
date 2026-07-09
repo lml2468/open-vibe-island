@@ -376,9 +376,22 @@ public enum AgentEvent: Equatable, Codable, Sendable {
 
     /// The session this event pertains to. Every payload carries a `sessionID`,
     /// so this is non-optional and lets callers avoid re-enumerating all cases
-    /// just to read it. RED STUB — replaced in Green.
+    /// just to read it.
     public var sessionID: String {
-        ""
+        switch self {
+        case let .sessionStarted(payload): payload.sessionID
+        case let .activityUpdated(payload): payload.sessionID
+        case let .permissionRequested(payload): payload.sessionID
+        case let .questionAsked(payload): payload.sessionID
+        case let .sessionCompleted(payload): payload.sessionID
+        case let .jumpTargetUpdated(payload): payload.sessionID
+        case let .sessionMetadataUpdated(payload): payload.sessionID
+        case let .claudeSessionMetadataUpdated(payload): payload.sessionID
+        case let .geminiSessionMetadataUpdated(payload): payload.sessionID
+        case let .openCodeSessionMetadataUpdated(payload): payload.sessionID
+        case let .cursorSessionMetadataUpdated(payload): payload.sessionID
+        case let .actionableStateResolved(payload): payload.sessionID
+        }
     }
 }
 
