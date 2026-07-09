@@ -25,6 +25,17 @@ enum TerminalProbeSupport {
         value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    /// Run an AppleScript via `/usr/bin/osascript`, bounded by `timeout`. Shared
+    /// default behind the terminal probes' injected `appleScriptRunner` seam.
+    /// STUB (Red): real Process-based impl filled in during Green.
+    static func runOSAScript(
+        _ script: String,
+        timeout: TimeInterval,
+        errorDomain: String
+    ) throws -> String {
+        ""
+    }
+
     /// AppleScript that enumerates open Ghostty terminals, emitting one record per
     /// terminal (`id`, `working directory`, `name`) delimited by ASCII field (31)
     /// and record (30) separators. Shared verbatim by the probe and the resolver;
