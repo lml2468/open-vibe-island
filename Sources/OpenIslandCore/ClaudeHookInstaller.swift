@@ -286,7 +286,7 @@ public enum ClaudeHookInstaller {
         return isLegacyOpenIslandHookCommand(command)
     }
 
-    private static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
+    static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
         let normalized = command.lowercased()
         if (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks")) && normalized.contains("--source claude") {
             return true

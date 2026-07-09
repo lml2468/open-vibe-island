@@ -390,7 +390,7 @@ public enum CodexHookInstaller {
         return isLegacyOpenIslandHookCommand(command)
     }
 
-    private static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
+    static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
         let normalized = command.lowercased()
         if normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks") {
             return true

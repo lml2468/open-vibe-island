@@ -147,7 +147,7 @@ public enum GeminiHookInstaller {
         }
     }
 
-    private static func isOpenIslandGeminiHookCommand(_ command: String) -> Bool {
+    static func isOpenIslandGeminiHookCommand(_ command: String) -> Bool {
         let normalized = command.lowercased()
         return (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks"))
             && normalized.contains("gemini")

@@ -201,7 +201,7 @@ public enum KimiHookInstaller {
         return value
     }
 
-    private static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
+    static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
         let normalized = command.lowercased()
         guard normalized.contains("--source kimi") else {
             return false
