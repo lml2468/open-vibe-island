@@ -117,7 +117,7 @@ public enum CodexHookInstaller {
         }
 
         rootObject["hooks"] = hooksObject
-        let data = try serialize(rootObject)
+        let data = try JSONConfigSerialization.serialize(rootObject)
         let changed = data != existingData
         return CodexHookFileMutation(contents: data, changed: changed, hasRemainingHooks: true)
     }
@@ -154,7 +154,7 @@ public enum CodexHookInstaller {
         }
 
         rootObject["hooks"] = hooksObject
-        let data = try serialize(rootObject)
+        let data = try JSONConfigSerialization.serialize(rootObject)
         return CodexHookFileMutation(contents: data, changed: mutated || data != existingData, hasRemainingHooks: true)
     }
 
@@ -291,10 +291,6 @@ public enum CodexHookInstaller {
         }
 
         return rootObject
-    }
-
-    private static func serialize(_ object: [String: Any]) throws -> Data {
-        try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
 
     private static func sanitize(groups: [Any], managedCommand: String?) -> [[String: Any]] {
