@@ -42,6 +42,14 @@ final class OverlayUICoordinator {
     @ObservationIgnored
     var ignoresPointerExitAccessor: (() -> Bool)?
 
+    /// Whether the hardware pointer is currently inside the expanded notification
+    /// area. Injectable so notification auto-collapse tests are deterministic
+    /// instead of depending on the real cursor (`NSEvent.mouseLocation`). When
+    /// nil, falls back to the real panel check. STUB (Red): not yet consulted at
+    /// the call sites.
+    @ObservationIgnored
+    var pointerInExpandedAreaProvider: (() -> Bool)?
+
     @ObservationIgnored
     var harnessRuntimeMonitor: HarnessRuntimeMonitor?
 
