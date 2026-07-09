@@ -788,7 +788,7 @@ struct TerminalJumpTargetResolver {
     }
 
     private func normalizedTerminalName(for value: String?) -> String? {
-        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        TerminalProbeSupport.normalizedTerminalName(for: value)
     }
 
     private func normalizedPathForMatching(_ value: String?) -> String? {
