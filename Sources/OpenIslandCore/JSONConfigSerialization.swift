@@ -9,4 +9,16 @@ enum JSONConfigSerialization {
     static func serialize(_ object: [String: Any]) throws -> Data {
         try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
     }
+
+    /// Parse a config file's root JSON object. Returns `[:]` for nil data
+    /// (start-fresh, not an error); throws `invalidError()` when the top-level
+    /// JSON is not a dictionary — NEVER resets to `[:]` on parse failure, which
+    /// would overwrite the user's file (see the installer-config-safety rule).
+    /// STUB (Red): real impl filled in during Green.
+    static func loadRootObject(
+        from data: Data?,
+        invalidError: @autoclosure () -> Error
+    ) throws -> [String: Any] {
+        [:]
+    }
 }
