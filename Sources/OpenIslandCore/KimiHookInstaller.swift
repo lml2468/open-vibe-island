@@ -201,16 +201,14 @@ public enum KimiHookInstaller {
         return value
     }
 
-    private static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
+    static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
         let normalized = command.lowercased()
         guard normalized.contains("--source kimi") else {
             return false
         }
 
-        return normalized.contains("openislandhooks")
-            || normalized.contains("vibeislandhooks")
-            || normalized.contains("open-island-bridge")
-            || normalized.contains("vibe-island-bridge")
+        return OpenIslandHookMarkers.hasHooksMarker(normalized)
+            || OpenIslandHookMarkers.hasBridgeMarker(normalized)
     }
 
     private static func renderManagedBlock(event: String, matcher: String?, command: String) -> String {

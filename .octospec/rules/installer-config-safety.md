@@ -49,6 +49,23 @@ non-destructive. When changing installer code, keep these invariants.
   **genuinely empty** of all keys — never when unrelated user keys remain. If you
   can't prove a residual value is yours, keep it.
 
+## Centralize marker literals, keep the gating split
+
+- The brand-alias substrings that identify an Open Island / Vibe Island managed
+  hook (`openislandhooks`/`vibeislandhooks`, `open-island-bridge`/`vibe-island-bridge`)
+  live in **one** place — `OpenIslandHookMarkers.hasHooksMarker/hasBridgeMarker`.
+  Never re-inline them in a predicate. A past brand rename already proved these
+  drift: a missed site is a silent config-safety bug (a managed hook stops being
+  recognized and survives uninstall, or a user's own hook gets matched and deleted).
+- Do **not** unify the per-agent detection predicates themselves. Their gating
+  genuinely diverges (Claude: `--source claude` for hooks, bare `claude` for bridge;
+  Codex: ungated; Cursor/Gemini: bare agent-name, hooks-only; Kimi: `--source kimi`
+  over both) and each drives a delete-vs-keep decision. Centralize the drift-prone
+  *literals*; keep the safety-critical *gating* split and locally auditable.
+- Pin each predicate's truth table with a **direct** test (relax `private`→`internal`
+  if needed) so a future edit to a predicate is caught even when the higher-level
+  installer round-trip suites don't exercise that exact marker/gate combination.
+
 ## Bounded, atomic writes
 
 - Back up before a changed write, and **bound retention** — keep at most N

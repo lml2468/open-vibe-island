@@ -286,13 +286,13 @@ public enum ClaudeHookInstaller {
         return isLegacyOpenIslandHookCommand(command)
     }
 
-    private static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
+    static func isLegacyOpenIslandHookCommand(_ command: String) -> Bool {
         let normalized = command.lowercased()
-        if (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks")) && normalized.contains("--source claude") {
+        if OpenIslandHookMarkers.hasHooksMarker(normalized) && normalized.contains("--source claude") {
             return true
         }
 
-        return (normalized.contains("open-island-bridge") || normalized.contains("vibe-island-bridge"))
+        return OpenIslandHookMarkers.hasBridgeMarker(normalized)
             && normalized.contains("claude")
     }
 }
