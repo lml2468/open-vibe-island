@@ -373,6 +373,13 @@ public enum AgentEvent: Equatable, Codable, Sendable {
             try container.encode(payload, forKey: .actionableStateResolved)
         }
     }
+
+    /// The session this event pertains to. Every payload carries a `sessionID`,
+    /// so this is non-optional and lets callers avoid re-enumerating all cases
+    /// just to read it. RED STUB — replaced in Green.
+    public var sessionID: String {
+        ""
+    }
 }
 
 public struct ScheduledAgentEvent: Equatable, Sendable {
