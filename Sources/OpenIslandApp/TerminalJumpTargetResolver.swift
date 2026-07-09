@@ -194,44 +194,7 @@ struct TerminalJumpTargetResolver {
         for session: AgentSession,
         snapshot: GhosttyTerminalSnapshot
     ) -> JumpTarget? {
-        let hadExistingJumpTarget = session.jumpTarget != nil
-        var jumpTarget = session.jumpTarget ?? JumpTarget(
-            terminalApp: "Ghostty",
-            workspaceName: URL(fileURLWithPath: snapshot.workingDirectory).lastPathComponent,
-            paneTitle: snapshot.title,
-            workingDirectory: snapshot.workingDirectory,
-            terminalSessionID: snapshot.sessionID
-        )
-
-        var changed = !hadExistingJumpTarget
-
-        if normalizedTerminalName(for: jumpTarget.terminalApp) != "ghostty" {
-            jumpTarget.terminalApp = "Ghostty"
-            changed = true
-        }
-
-        if nonEmptyValue(jumpTarget.terminalSessionID) != snapshot.sessionID {
-            jumpTarget.terminalSessionID = snapshot.sessionID
-            changed = true
-        }
-
-        if nonEmptyValue(jumpTarget.workingDirectory) != snapshot.workingDirectory {
-            jumpTarget.workingDirectory = snapshot.workingDirectory
-            changed = true
-        }
-
-        if let title = nonEmptyValue(snapshot.title), title != jumpTarget.paneTitle {
-            jumpTarget.paneTitle = title
-            changed = true
-        }
-
-        let workspaceName = URL(fileURLWithPath: snapshot.workingDirectory).lastPathComponent
-        if !workspaceName.isEmpty, workspaceName != jumpTarget.workspaceName {
-            jumpTarget.workspaceName = workspaceName
-            changed = true
-        }
-
-        return changed ? jumpTarget : nil
+        TerminalProbeSupport.correctedGhosttyJumpTarget(for: session, snapshot: snapshot)
     }
 
     // MARK: - Tmux matching

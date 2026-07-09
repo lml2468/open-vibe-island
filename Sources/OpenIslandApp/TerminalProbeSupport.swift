@@ -67,6 +67,62 @@ enum TerminalProbeSupport {
         return changed ? jumpTarget : nil
     }
 
+    /// Reconcile a session's jump target against a discovered Ghostty terminal.
+    /// Synthesizes a target when the session has none. Includes the Zellij guard
+    /// (Zellij runs inside Ghostty but jumps via pane IDs, so its target must not
+    /// be overwritten) — inert in the resolver (its filter excludes zellij), live
+    /// in the probe (its ambiguous-session catch-all admits zellij).
+    static func correctedGhosttyJumpTarget(
+        for session: AgentSession,
+        snapshot: GhosttyTerminalSnapshot
+    ) -> JumpTarget? {
+        let hadExistingJumpTarget = session.jumpTarget != nil
+        var jumpTarget = session.jumpTarget ?? JumpTarget(
+            terminalApp: "Ghostty",
+            workspaceName: URL(fileURLWithPath: snapshot.workingDirectory).lastPathComponent,
+            paneTitle: snapshot.title,
+            workingDirectory: snapshot.workingDirectory,
+            terminalSessionID: snapshot.sessionID
+        )
+
+        // Zellij runs inside Ghostty but has its own jump-back mechanism
+        // via pane IDs. Don't overwrite Zellij's terminal info with
+        // Ghostty's session ID, as it would break Zellij pane targeting.
+        if jumpTarget.terminalApp.lowercased() == "zellij" {
+            return nil
+        }
+
+        var changed = !hadExistingJumpTarget
+
+        if normalizedTerminalName(for: jumpTarget.terminalApp) != "ghostty" {
+            jumpTarget.terminalApp = "Ghostty"
+            changed = true
+        }
+
+        if nonEmptyValue(jumpTarget.terminalSessionID) != snapshot.sessionID {
+            jumpTarget.terminalSessionID = snapshot.sessionID
+            changed = true
+        }
+
+        if nonEmptyValue(jumpTarget.workingDirectory) != snapshot.workingDirectory {
+            jumpTarget.workingDirectory = snapshot.workingDirectory
+            changed = true
+        }
+
+        if let title = nonEmptyValue(snapshot.title), title != jumpTarget.paneTitle {
+            jumpTarget.paneTitle = title
+            changed = true
+        }
+
+        let workspaceName = URL(fileURLWithPath: snapshot.workingDirectory).lastPathComponent
+        if !workspaceName.isEmpty, workspaceName != jumpTarget.workspaceName {
+            jumpTarget.workspaceName = workspaceName
+            changed = true
+        }
+
+        return changed ? jumpTarget : nil
+    }
+
     /// Run an AppleScript via `/usr/bin/osascript`, bounded by `timeout`. Shared
     /// default behind the terminal probes' injected `appleScriptRunner` seam.
     /// Throws an `NSError` in `errorDomain` (code 408 on timeout, else the
