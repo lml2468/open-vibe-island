@@ -9,7 +9,10 @@ slug: config-manifest-store
 upstream: arch-quality-audit-r2 (discovery finding #9, cluster B — manager tier, extraction slice A)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-09T12:13:09Z
 ---
 
 # Task: config-manifest-store
