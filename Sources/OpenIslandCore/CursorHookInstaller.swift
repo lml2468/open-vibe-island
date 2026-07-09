@@ -46,7 +46,7 @@ public enum CursorHookInstaller {
     ]
 
     public static func hookCommand(for binaryPath: String) -> String {
-        "\(shellQuote(binaryPath)) --source cursor"
+        "\(ShellQuoting.quote(binaryPath)) --source cursor"
     }
 
     public static func installHooksJSON(
@@ -155,10 +155,5 @@ public enum CursorHookInstaller {
         let normalized = command.lowercased()
         return (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks"))
             && normalized.contains("cursor")
-    }
-
-    private static func shellQuote(_ string: String) -> String {
-        guard !string.isEmpty else { return "''" }
-        return "'\(string.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }
