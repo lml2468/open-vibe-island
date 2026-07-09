@@ -797,6 +797,10 @@ struct AppModelSessionListTests {
     @Test
     func completionNotificationHoverCancelsPendingTimedCollapse() {
         let model = AppModel()
+        // Report the pointer as OUTSIDE the expanded area so the schedule/cancel
+        // transition is deterministic and does not depend on the real hardware
+        // cursor (the source of this test's former flakiness).
+        model.overlay.pointerInExpandedAreaProvider = { false }
         model.state = SessionState(
             sessions: [
                 AgentSession(
@@ -821,6 +825,56 @@ struct AppModelSessionListTests {
         #expect(model.shouldDeferTimedNotificationAutoCollapse)
         #expect(model.notchStatus == .opened)
         #expect(model.notchOpenReason == .notification)
+    }
+
+    /// A2: with the pointer reported OUTSIDE, opening a notification schedules the
+    /// auto-collapse — deterministically, regardless of the real cursor.
+    @Test
+    func notificationSchedulesCollapseWhenPointerReportedOutside() {
+        let model = AppModel()
+        model.overlay.pointerInExpandedAreaProvider = { false }
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "session-1",
+                    title: "Test",
+                    tool: .codex,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Done",
+                    updatedAt: .now
+                )
+            ]
+        )
+
+        model.notchOpen(reason: .notification, surface: .sessionList(actionableSessionID: "session-1"))
+
+        #expect(model.hasPendingNotificationAutoCollapse)
+    }
+
+    /// A3: with the pointer reported INSIDE, opening a notification does NOT
+    /// schedule the auto-collapse (the pointer-inside early-return).
+    @Test
+    func notificationDoesNotScheduleCollapseWhenPointerReportedInside() {
+        let model = AppModel()
+        model.overlay.pointerInExpandedAreaProvider = { true }
+        model.state = SessionState(
+            sessions: [
+                AgentSession(
+                    id: "session-1",
+                    title: "Test",
+                    tool: .codex,
+                    attachmentState: .attached,
+                    phase: .completed,
+                    summary: "Done",
+                    updatedAt: .now
+                )
+            ]
+        )
+
+        model.notchOpen(reason: .notification, surface: .sessionList(actionableSessionID: "session-1"))
+
+        #expect(!model.hasPendingNotificationAutoCollapse)
     }
 
     @Test
