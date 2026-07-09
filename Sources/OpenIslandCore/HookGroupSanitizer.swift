@@ -11,19 +11,54 @@ import Foundation
 /// locally-auditable gating that `installer-config-safety` requires while
 /// removing the duplicated traversal.
 enum HookGroupSanitizer {
-    // RED STUB — returns wrong values so the failing-first tests compile and
-    // fail on assertion. Replaced in Green.
+    /// Filters managed hooks out of each group, keeping the group (and its other
+    /// keys) when non-managed hooks survive, and dropping a group entirely when
+    /// its surviving hooks would be empty. Non-dictionary elements are dropped.
     static func sanitize(
         groups: [Any],
         isManaged: ([String: Any]) -> Bool
     ) -> [[String: Any]] {
-        []
+        groups.compactMap { item in
+            guard var group = item as? [String: Any] else {
+                return nil
+            }
+
+            let existingHooks = group["hooks"] as? [Any] ?? []
+            let filteredHooks = existingHooks.compactMap { hook -> [String: Any]? in
+                guard let hook = hook as? [String: Any] else {
+                    return nil
+                }
+
+                return isManaged(hook) ? nil : hook
+            }
+
+            guard !filteredHooks.isEmpty else {
+                return nil
+            }
+
+            group["hooks"] = filteredHooks
+            return group
+        }
     }
 
+    /// True iff some group contains some hook the `isManaged` closure matches.
     static func containsManagedHook(
         in groups: [Any],
         isManaged: ([String: Any]) -> Bool
     ) -> Bool {
-        false
+        groups.contains { item in
+            guard let group = item as? [String: Any],
+                  let hooks = group["hooks"] as? [Any] else {
+                return false
+            }
+
+            return hooks.contains { hook in
+                guard let hook = hook as? [String: Any] else {
+                    return false
+                }
+
+                return isManaged(hook)
+            }
+        }
     }
 }

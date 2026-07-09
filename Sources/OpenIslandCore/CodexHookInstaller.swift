@@ -285,68 +285,15 @@ public enum CodexHookInstaller {
     }
 
     private static func sanitize(groups: [Any], managedCommand: String?) -> [[String: Any]] {
-        groups.compactMap { item in
-            guard var group = item as? [String: Any] else {
-                return nil
-            }
-
-            let existingHooks = group["hooks"] as? [Any] ?? []
-            let filteredHooks = existingHooks.compactMap { hook -> [String: Any]? in
-                guard let hook = hook as? [String: Any] else {
-                    return nil
-                }
-
-                return isManagedHook(hook, managedCommand: managedCommand) ? nil : hook
-            }
-
-            guard !filteredHooks.isEmpty else {
-                return nil
-            }
-
-            group["hooks"] = filteredHooks
-            return group
-        }
+        HookGroupSanitizer.sanitize(groups: groups) { isManagedHook($0, managedCommand: managedCommand) }
     }
 
     private static func sanitizeForInstall(groups: [Any], replacingCommand: String) -> [[String: Any]] {
-        groups.compactMap { item in
-            guard var group = item as? [String: Any] else {
-                return nil
-            }
-
-            let existingHooks = group["hooks"] as? [Any] ?? []
-            let filteredHooks = existingHooks.compactMap { hook -> [String: Any]? in
-                guard let hook = hook as? [String: Any] else {
-                    return nil
-                }
-
-                return isManagedHookForInstall(hook, replacingCommand: replacingCommand) ? nil : hook
-            }
-
-            guard !filteredHooks.isEmpty else {
-                return nil
-            }
-
-            group["hooks"] = filteredHooks
-            return group
-        }
+        HookGroupSanitizer.sanitize(groups: groups) { isManagedHookForInstall($0, replacingCommand: replacingCommand) }
     }
 
     private static func containsManagedHook(in groups: [Any], managedCommand: String?) -> Bool {
-        groups.contains { item in
-            guard let group = item as? [String: Any],
-                  let hooks = group["hooks"] as? [Any] else {
-                return false
-            }
-
-            return hooks.contains { hook in
-                guard let hook = hook as? [String: Any] else {
-                    return false
-                }
-
-                return isManagedHook(hook, managedCommand: managedCommand)
-            }
-        }
+        HookGroupSanitizer.containsManagedHook(in: groups) { isManagedHook($0, managedCommand: managedCommand) }
     }
 
     private static func managedGroup(matcher: String?, hookCommand: String, timeout: Int) -> [String: Any] {
