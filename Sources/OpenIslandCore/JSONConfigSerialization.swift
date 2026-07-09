@@ -14,11 +14,19 @@ enum JSONConfigSerialization {
     /// (start-fresh, not an error); throws `invalidError()` when the top-level
     /// JSON is not a dictionary — NEVER resets to `[:]` on parse failure, which
     /// would overwrite the user's file (see the installer-config-safety rule).
-    /// STUB (Red): real impl filled in during Green.
     static func loadRootObject(
         from data: Data?,
         invalidError: @autoclosure () -> Error
     ) throws -> [String: Any] {
-        [:]
+        guard let data else {
+            return [:]
+        }
+
+        let object = try JSONSerialization.jsonObject(with: data)
+        guard let rootObject = object as? [String: Any] else {
+            throw invalidError()
+        }
+
+        return rootObject
     }
 }

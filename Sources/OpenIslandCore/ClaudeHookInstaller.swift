@@ -149,16 +149,7 @@ public enum ClaudeHookInstaller {
     }
 
     private static func loadRootObject(from data: Data?) throws -> [String: Any] {
-        guard let data else {
-            return [:]
-        }
-
-        let object = try JSONSerialization.jsonObject(with: data)
-        guard let rootObject = object as? [String: Any] else {
-            throw ClaudeHookInstallerError.invalidSettingsJSON
-        }
-
-        return rootObject
+        try JSONConfigSerialization.loadRootObject(from: data, invalidError: ClaudeHookInstallerError.invalidSettingsJSON)
     }
 
     private static func sanitize(groups: [Any], managedCommand: String?) -> [[String: Any]] {
