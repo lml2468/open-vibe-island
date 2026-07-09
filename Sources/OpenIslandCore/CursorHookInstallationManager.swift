@@ -90,10 +90,7 @@ public final class CursorHookInstallationManager: @unchecked Sendable {
         }
 
         let manifest = CursorHookInstallerManifest(hookCommand: command)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
+        try ConfigManifestStore.write(manifest, to: manifestURL)
 
         return try status(hooksBinaryURL: installedBinaryURL)
     }
@@ -127,24 +124,15 @@ public final class CursorHookInstallationManager: @unchecked Sendable {
     }
 
     private func loadManifest(at url: URL) throws -> CursorHookInstallerManifest? {
-        guard fileManager.fileExists(atPath: url.path) else { return nil }
-
-        let data = try Data(contentsOf: url)
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return try decoder.decode(CursorHookInstallerManifest.self, from: data)
+        try ConfigManifestStore.load(at: url, fileManager: fileManager)
     }
 
     private func resolvedHooksBinaryURL(explicitURL: URL?) -> URL? {
-        if let explicitURL {
-            return explicitURL.standardizedFileURL
-        }
-
-        guard fileManager.isExecutableFile(atPath: managedHooksBinaryURL.path) else {
-            return nil
-        }
-
-        return managedHooksBinaryURL
+        ConfigManifestStore.resolvedBinaryURL(
+            managedBinaryURL: managedHooksBinaryURL,
+            explicitURL: explicitURL,
+            fileManager: fileManager
+        )
     }
 
     private func backupFile(at url: URL) throws {
