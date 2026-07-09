@@ -55,6 +55,8 @@ struct HookInstallationManagerRoundTripTests {
             let installStatus = try manager.install(hooksBinaryURL: buildBinaryURL)
             #expect(installStatus.managedHooksPresent == true)
             #expect(installStatus.manifest != nil)
+            // The manifest records the command built from the installed binary path.
+            #expect(installStatus.manifest?.hookCommand == GeminiHookInstaller.hookCommand(for: managedBinaryURL.path))
             #expect(FileManager.default.fileExists(atPath: settingsURL.path))
             #expect(FileManager.default.fileExists(atPath: manifestURL.path))
 
@@ -64,10 +66,11 @@ struct HookInstallationManagerRoundTripTests {
             #expect(hooks?.keys.contains("SessionStart") == true)
             #expect(hooks?.keys.contains("Notification") == true)
 
-            // Uninstall
+            // Uninstall — settings.json had only managed hooks → file removed too.
             let uninstallStatus = try manager.uninstall()
             #expect(uninstallStatus.managedHooksPresent == false)
             #expect(!FileManager.default.fileExists(atPath: manifestURL.path))
+            #expect(!FileManager.default.fileExists(atPath: settingsURL.path))
         }
     }
 
@@ -87,6 +90,7 @@ struct HookInstallationManagerRoundTripTests {
             let installStatus = try manager.install(hooksBinaryURL: buildBinaryURL)
             #expect(installStatus.managedHooksPresent == true)
             #expect(installStatus.manifest != nil)
+            #expect(installStatus.manifest?.hookCommand == KimiHookInstaller.hookCommand(for: managedBinaryURL.path))
             #expect(FileManager.default.fileExists(atPath: configURL.path))
             #expect(FileManager.default.fileExists(atPath: manifestURL.path))
 
@@ -94,10 +98,12 @@ struct HookInstallationManagerRoundTripTests {
             #expect(contents.contains(KimiHookInstaller.markerComment))
             #expect(contents.contains("--source kimi"))
 
-            // Uninstall
+            // Uninstall — config had only managed blocks → marker gone (file removed).
             let uninstallStatus = try manager.uninstall()
             #expect(uninstallStatus.managedHooksPresent == false)
             #expect(!FileManager.default.fileExists(atPath: manifestURL.path))
+            let afterContents = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+            #expect(!afterContents.contains(KimiHookInstaller.markerComment))
         }
     }
 
@@ -119,16 +125,19 @@ struct HookInstallationManagerRoundTripTests {
             #expect(installStatus.managedHooksPresent == true)
             #expect(installStatus.featureFlagEnabled == true)
             #expect(installStatus.manifest != nil)
+            #expect(installStatus.manifest?.hookCommand == CodexHookInstaller.hookCommand(for: managedBinaryURL.path))
             #expect(FileManager.default.fileExists(atPath: configURL.path))
             #expect(FileManager.default.fileExists(atPath: hooksURL.path))
             #expect(FileManager.default.fileExists(atPath: manifestURL.path))
 
             // Uninstall — no surviving user hooks → the gated
-            // disableCodexHooksFeatureIfManaged fires, toggling the flag false.
+            // disableCodexHooksFeatureIfManaged fires, toggling the flag false,
+            // and hooks.json (managed-only) is removed.
             let uninstallStatus = try manager.uninstall()
             #expect(uninstallStatus.managedHooksPresent == false)
             #expect(uninstallStatus.featureFlagEnabled == false)
             #expect(!FileManager.default.fileExists(atPath: manifestURL.path))
+            #expect(!FileManager.default.fileExists(atPath: hooksURL.path))
         }
     }
 }
