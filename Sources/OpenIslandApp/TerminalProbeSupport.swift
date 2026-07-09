@@ -1,4 +1,5 @@
 import Foundation
+import OpenIslandCore
 
 /// A Ghostty terminal surface discovered via AppleScript. Shared by the terminal
 /// probe/resolver pair (moved verbatim from their byte-identical nested copies).
@@ -23,6 +24,47 @@ enum TerminalProbeSupport {
     /// and lowercase.
     static func normalizedTerminalName(for value: String?) -> String? {
         value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// Trimmed value, or nil if nil / whitespace-only.
+    static func nonEmptyValue(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    /// Reconcile a session's jump target against a discovered Terminal.app tab.
+    /// Returns the corrected target if any field changed, else nil (and nil when
+    /// the session has no jump target).
+    static func correctedTerminalJumpTarget(
+        for session: AgentSession,
+        snapshot: TerminalTabSnapshot
+    ) -> JumpTarget? {
+        guard var jumpTarget = session.jumpTarget else {
+            return nil
+        }
+
+        var changed = false
+
+        if normalizedTerminalName(for: jumpTarget.terminalApp) != "terminal" {
+            jumpTarget.terminalApp = "Terminal"
+            changed = true
+        }
+
+        if nonEmptyValue(jumpTarget.terminalTTY) != snapshot.tty {
+            jumpTarget.terminalTTY = snapshot.tty
+            changed = true
+        }
+
+        if let title = nonEmptyValue(snapshot.customTitle),
+           title != jumpTarget.paneTitle {
+            jumpTarget.paneTitle = title
+            changed = true
+        }
+
+        return changed ? jumpTarget : nil
     }
 
     /// Run an AppleScript via `/usr/bin/osascript`, bounded by `timeout`. Shared

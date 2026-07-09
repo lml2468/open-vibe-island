@@ -792,29 +792,7 @@ struct TerminalSessionAttachmentProbe {
         for session: AgentSession,
         snapshot: TerminalTabSnapshot
     ) -> JumpTarget? {
-        guard var jumpTarget = session.jumpTarget else {
-            return nil
-        }
-
-        var changed = false
-
-        if normalizedTerminalName(for: jumpTarget.terminalApp) != "terminal" {
-            jumpTarget.terminalApp = "Terminal"
-            changed = true
-        }
-
-        if nonEmptyValue(jumpTarget.terminalTTY) != snapshot.tty {
-            jumpTarget.terminalTTY = snapshot.tty
-            changed = true
-        }
-
-        if let title = nonEmptyValue(snapshot.customTitle),
-           title != jumpTarget.paneTitle {
-            jumpTarget.paneTitle = title
-            changed = true
-        }
-
-        return changed ? jumpTarget : nil
+        TerminalProbeSupport.correctedTerminalJumpTarget(for: session, snapshot: snapshot)
     }
 
     // MARK: - iTerm attachment
@@ -1178,12 +1156,7 @@ struct TerminalSessionAttachmentProbe {
     }
 
     private func nonEmptyValue(_ value: String?) -> String? {
-        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trimmed.isEmpty else {
-            return nil
-        }
-
-        return trimmed
+        TerminalProbeSupport.nonEmptyValue(value)
     }
 
     private func ghosttySnapshots() throws -> [GhosttyTerminalSnapshot] {
