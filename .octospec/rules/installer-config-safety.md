@@ -74,6 +74,21 @@ non-destructive. When changing installer code, keep these invariants.
   survival, drop-empty-group, drop non-dict, two-level contains). The hazard to
   check at Verify is a **swapped closure** (a delegate passing the wrong leaf, e.g.
   `sanitize` passing the install-time leaf) — check each delegate line-by-line.
+- When installation managers share manifest persistence that differs **only by the
+  Codable manifest type**, extract it into a generic shared store (`ConfigManifestStore`
+  — `load<M: Decodable>`, `write<M: Encodable>`) rather than a base class. The
+  extraction must reproduce the persistence contract EXACTLY: `.iso8601` decode/encode,
+  `[.prettyPrinted, .sortedKeys]` output, `.atomic` write, and **nil-for-missing but
+  throw-for-corrupt** on load (never reset — this is the manifest-lifecycle form of
+  the parse-failure rule above). The hazard to check at Verify is a **strategy drift**
+  (a decoder losing `.iso8601`, an encoder dropping `.sortedKeys`, a write losing
+  `.atomic`) — byte-diff the extracted body against an original, not just the call sites.
+- Do NOT extract everything that looks duplicated: a 1-line delegate (e.g. `backupFile`
+  → `ConfigBackup`) or a helper with 2 callers that would need a wider signature (e.g.
+  Claude/Codex-only `resolvedManifestURL`) is better left inline — extracting trades
+  real dedup for indirection or a wider surface. Record such non-goals explicitly in
+  the brief so Verify doesn't flag them as misses. Manager install/uninstall/status
+  **orchestration stays per-manager** (blast-radius isolation); no base class/protocol.
 
 ## Bounded, atomic writes
 
