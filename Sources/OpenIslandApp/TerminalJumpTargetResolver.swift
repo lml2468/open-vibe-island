@@ -11,6 +11,22 @@ import OpenIslandCore
 struct TerminalJumpTargetResolver {
     typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 
+    typealias AppleScriptRunner = @Sendable (String) throws -> String
+    typealias AppRunningChecker = @Sendable (String) -> Bool
+
+    private let appleScriptRunner: AppleScriptRunner
+    private let appRunningChecker: AppRunningChecker
+
+    init(
+        appleScriptRunner: @escaping AppleScriptRunner = Self.defaultAppleScriptRunner(script:),
+        appRunningChecker: @escaping AppRunningChecker = { bundleIdentifier in
+            NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty == false
+        }
+    ) {
+        self.appleScriptRunner = appleScriptRunner
+        self.appRunningChecker = appRunningChecker
+    }
+
     struct WeztermFamilySnapshot: Sendable {
         var paneID: Int
         var workingDirectory: String
@@ -743,10 +759,14 @@ struct TerminalJumpTargetResolver {
     }
 
     private func isRunning(bundleIdentifier: String) -> Bool {
-        NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).isEmpty == false
+        appRunningChecker(bundleIdentifier)
     }
 
     private func runAppleScript(_ script: String) throws -> String {
+        try appleScriptRunner(script)
+    }
+
+    static func defaultAppleScriptRunner(script: String) throws -> String {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         task.arguments = ["-e", script]
