@@ -88,7 +88,7 @@ public enum CodexHookInstaller {
     ]
 
     public static func hookCommand(for binaryPath: String) -> String {
-        shellQuote(binaryPath)
+        ShellQuoting.quote(binaryPath)
     }
 
     public static func installHooksJSON(
@@ -573,13 +573,5 @@ public enum CodexHookInstaller {
 
         let data = output.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)
-    }
-
-    private static func shellQuote(_ string: String) -> String {
-        guard !string.isEmpty else {
-            return "''"
-        }
-
-        return "'\(string.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }

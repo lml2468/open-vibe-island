@@ -45,7 +45,7 @@ public enum GeminiHookInstaller {
     ]
 
     public static func hookCommand(for binaryPath: String) -> String {
-        "\(shellQuote(binaryPath)) --source gemini"
+        "\(ShellQuoting.quote(binaryPath)) --source gemini"
     }
 
     public static func installSettingsJSON(
@@ -162,10 +162,5 @@ public enum GeminiHookInstaller {
         let normalized = command.lowercased()
         return (normalized.contains("openislandhooks") || normalized.contains("vibeislandhooks"))
             && normalized.contains("gemini")
-    }
-
-    private static func shellQuote(_ string: String) -> String {
-        guard !string.isEmpty else { return "''" }
-        return "'\(string.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }

@@ -64,7 +64,7 @@ public enum ClaudeHookInstaller {
     ]
 
     public static func hookCommand(for binaryPath: String, source: String = "claude") -> String {
-        "\(shellQuote(binaryPath)) --source \(source)"
+        "\(ShellQuoting.quote(binaryPath)) --source \(source)"
     }
 
     public static func installSettingsJSON(
@@ -307,13 +307,5 @@ public enum ClaudeHookInstaller {
 
         return (normalized.contains("open-island-bridge") || normalized.contains("vibe-island-bridge"))
             && normalized.contains("claude")
-    }
-
-    private static func shellQuote(_ string: String) -> String {
-        guard !string.isEmpty else {
-            return "''"
-        }
-
-        return "'\(string.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }

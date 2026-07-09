@@ -49,7 +49,7 @@ public enum KimiHookInstaller {
     ]
 
     public static func hookCommand(for binaryPath: String) -> String {
-        "\(shellQuote(binaryPath)) --source kimi"
+        "\(ShellQuoting.quote(binaryPath)) --source kimi"
     }
 
     public static func installConfigTOML(
@@ -232,10 +232,5 @@ public enum KimiHookInstaller {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escaped)\""
-    }
-
-    private static func shellQuote(_ string: String) -> String {
-        guard !string.isEmpty else { return "''" }
-        return "'\(string.replacingOccurrences(of: "'", with: "'\\''"))'"
     }
 }
