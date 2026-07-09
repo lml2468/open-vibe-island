@@ -4,8 +4,16 @@ import Foundation
 /// string. Extracted from two identical private copies in `TerminalJumpService`
 /// and `TerminalTextSender`.
 enum AppleScriptEscaping {
-    /// STUB (Red): real escaping filled in during Green.
+    /// Escape a value for embedding inside an AppleScript double-quoted string:
+    /// nil → empty; backslash first (so an already-escaped quote isn't
+    /// double-processed), then double quote.
     static func escape(_ value: String?) -> String {
-        value ?? ""
+        guard let value else {
+            return ""
+        }
+
+        return value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }
