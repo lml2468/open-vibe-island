@@ -5,8 +5,8 @@ import Foundation
 /// from their byte-identical private copies. Grows as later cluster-A slices land.
 enum TerminalProbeSupport {
     /// Normalize a terminal app name for comparison: trim surrounding whitespace
-    /// and lowercase. STUB (Red): real normalization filled in during Green.
+    /// and lowercase.
     static func normalizedTerminalName(for value: String?) -> String? {
-        value
+        value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 }
