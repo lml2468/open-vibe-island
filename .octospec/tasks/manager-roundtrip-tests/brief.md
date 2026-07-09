@@ -9,7 +9,10 @@ slug: manager-roundtrip-tests
 upstream: arch-quality-audit-r2 (discovery finding #9, cluster B — manager tier, safety-net slice)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-09T10:47:25Z
 ---
 
 # Task: manager-roundtrip-tests
