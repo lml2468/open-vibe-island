@@ -67,6 +67,19 @@ enum TerminalProbeSupport {
         return changed ? jumpTarget : nil
     }
 
+    /// Reconcile a session's jump target against a discovered Ghostty terminal.
+    /// Synthesizes a target when the session has none. Includes the Zellij guard
+    /// (Zellij runs inside Ghostty but jumps via pane IDs, so its target must not
+    /// be overwritten) — inert in the resolver (its filter excludes zellij), live
+    /// in the probe (its ambiguous-session catch-all admits zellij).
+    /// STUB (Red): real impl filled in during Green.
+    static func correctedGhosttyJumpTarget(
+        for session: AgentSession,
+        snapshot: GhosttyTerminalSnapshot
+    ) -> JumpTarget? {
+        nil
+    }
+
     /// Run an AppleScript via `/usr/bin/osascript`, bounded by `timeout`. Shared
     /// default behind the terminal probes' injected `appleScriptRunner` seam.
     /// Throws an `NSError` in `errorDomain` (code 408 on timeout, else the
