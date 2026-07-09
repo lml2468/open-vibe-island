@@ -11,17 +11,6 @@ import OpenIslandCore
 struct TerminalJumpTargetResolver {
     typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 
-    struct GhosttyTerminalSnapshot: Sendable {
-        var sessionID: String
-        var workingDirectory: String
-        var title: String
-    }
-
-    struct TerminalTabSnapshot: Sendable {
-        var tty: String
-        var customTitle: String
-    }
-
     struct WeztermFamilySnapshot: Sendable {
         var paneID: Int
         var workingDirectory: String

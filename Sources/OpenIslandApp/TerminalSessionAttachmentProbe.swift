@@ -2,6 +2,13 @@ import AppKit
 import Foundation
 import OpenIslandCore
 
+// File-scope aliases to the shared top-level snapshot types. Declared at file
+// scope (not inside the type) so the right-hand side resolves unambiguously to
+// the top-level struct — the module name `OpenIslandApp` can't be used as a
+// qualifier here because a `struct OpenIslandApp` (the @main app) shadows it.
+typealias SharedGhosttyTerminalSnapshot = GhosttyTerminalSnapshot
+typealias SharedTerminalTabSnapshot = TerminalTabSnapshot
+
 struct TerminalSessionAttachmentProbe {
     struct SessionResolution {
         var attachmentState: SessionAttachmentState
@@ -15,16 +22,12 @@ struct TerminalSessionAttachmentProbe {
 
     typealias ActiveProcessSnapshot = ActiveAgentProcessDiscovery.ProcessSnapshot
 
-    struct GhosttyTerminalSnapshot: Sendable {
-        var sessionID: String
-        var workingDirectory: String
-        var title: String
-    }
-
-    struct TerminalTabSnapshot: Sendable {
-        var tty: String
-        var customTitle: String
-    }
+    // These snapshot types moved to the shared `TerminalProbeSupport` home
+    // (deduped from a byte-identical copy in `TerminalJumpTargetResolver`). The
+    // typealiases keep the `TerminalSessionAttachmentProbe.<Name>` qualified
+    // spelling working for external callers (ProcessMonitoringCoordinator, tests).
+    typealias GhosttyTerminalSnapshot = SharedGhosttyTerminalSnapshot
+    typealias TerminalTabSnapshot = SharedTerminalTabSnapshot
 
     struct ITermSessionSnapshot: Sendable {
         var sessionID: String
