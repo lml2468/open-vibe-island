@@ -27,13 +27,49 @@ enum TerminalProbeSupport {
 
     /// Run an AppleScript via `/usr/bin/osascript`, bounded by `timeout`. Shared
     /// default behind the terminal probes' injected `appleScriptRunner` seam.
-    /// STUB (Red): real Process-based impl filled in during Green.
+    /// Throws an `NSError` in `errorDomain` (code 408 on timeout, else the
+    /// process's exit status) on failure; returns the trimmed stdout on success.
     static func runOSAScript(
         _ script: String,
         timeout: TimeInterval,
         errorDomain: String
     ) throws -> String {
-        ""
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = ["-e", script]
+
+        let outputPipe = Pipe()
+        let errorPipe = Pipe()
+        task.standardOutput = outputPipe
+        task.standardError = errorPipe
+        let completionGroup = DispatchGroup()
+        completionGroup.enter()
+        task.terminationHandler = { _ in
+            completionGroup.leave()
+        }
+
+        try task.run()
+        let waitResult = completionGroup.wait(timeout: .now() + timeout)
+        if waitResult == .timedOut {
+            task.terminate()
+            _ = completionGroup.wait(timeout: .now() + 0.2)
+            throw NSError(domain: errorDomain, code: 408, userInfo: [
+                NSLocalizedDescriptionKey: "AppleScript probe timed out.",
+            ])
+        }
+
+        let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        guard task.terminationStatus == 0 else {
+            let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            throw NSError(domain: errorDomain, code: Int(task.terminationStatus), userInfo: [
+                NSLocalizedDescriptionKey: stderr.isEmpty ? "AppleScript probe failed." : stderr,
+            ])
+        }
+
+        return output
     }
 
     /// AppleScript that enumerates open Ghostty terminals, emitting one record per

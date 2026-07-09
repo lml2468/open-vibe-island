@@ -767,41 +767,10 @@ struct TerminalJumpTargetResolver {
     }
 
     static func defaultAppleScriptRunner(script: String) throws -> String {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        task.arguments = ["-e", script]
-
-        let outputPipe = Pipe()
-        let errorPipe = Pipe()
-        task.standardOutput = outputPipe
-        task.standardError = errorPipe
-        let completionGroup = DispatchGroup()
-        completionGroup.enter()
-        task.terminationHandler = { _ in
-            completionGroup.leave()
-        }
-
-        try task.run()
-        let waitResult = completionGroup.wait(timeout: .now() + Self.appleScriptTimeout)
-        if waitResult == .timedOut {
-            task.terminate()
-            _ = completionGroup.wait(timeout: .now() + 0.2)
-            throw NSError(domain: "TerminalJumpTargetResolver", code: 408, userInfo: [
-                NSLocalizedDescriptionKey: "AppleScript probe timed out.",
-            ])
-        }
-
-        let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        guard task.terminationStatus == 0 else {
-            let stderr = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw NSError(domain: "TerminalJumpTargetResolver", code: Int(task.terminationStatus), userInfo: [
-                NSLocalizedDescriptionKey: stderr.isEmpty ? "AppleScript probe failed." : stderr,
-            ])
-        }
-
-        return output
+        try TerminalProbeSupport.runOSAScript(
+            script,
+            timeout: appleScriptTimeout,
+            errorDomain: "TerminalJumpTargetResolver"
+        )
     }
 }
