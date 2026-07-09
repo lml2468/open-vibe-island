@@ -249,6 +249,7 @@ final class SessionDiscoveryCoordinator {
         merged.jumpTarget = existing.jumpTarget ?? discovered.jumpTarget
         merged.codexMetadata = mergeCodexMetadata(existing.codexMetadata, discovered.codexMetadata)
         merged.claudeMetadata = mergeClaudeMetadata(existing.claudeMetadata, discovered.claudeMetadata)
+        merged.geminiMetadata = mergeGeminiMetadata(existing.geminiMetadata, discovered.geminiMetadata)
         merged.openCodeMetadata = mergeOpenCodeMetadata(existing.openCodeMetadata, discovered.openCodeMetadata)
         merged.cursorMetadata = mergeCursorMetadata(existing.cursorMetadata, discovered.cursorMetadata)
         // Once a session is identified as a Codex.app session by any source
@@ -343,6 +344,28 @@ final class SessionDiscoveryCoordinator {
             lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
             currentTool: discovered.currentTool ?? existing.currentTool,
             currentCommandPreview: discovered.currentCommandPreview ?? existing.currentCommandPreview
+        )
+        return merged.isEmpty ? nil : merged
+    }
+
+    private func mergeGeminiMetadata(
+        _ existing: GeminiSessionMetadata?,
+        _ discovered: GeminiSessionMetadata?
+    ) -> GeminiSessionMetadata? {
+        guard let existing else {
+            return discovered?.isEmpty == true ? nil : discovered
+        }
+
+        guard let discovered else {
+            return existing.isEmpty ? nil : existing
+        }
+
+        let merged = GeminiSessionMetadata(
+            transcriptPath: discovered.transcriptPath ?? existing.transcriptPath,
+            initialUserPrompt: existing.initialUserPrompt ?? discovered.initialUserPrompt ?? discovered.lastUserPrompt,
+            lastUserPrompt: discovered.lastUserPrompt ?? existing.lastUserPrompt,
+            lastAssistantMessage: discovered.lastAssistantMessage ?? existing.lastAssistantMessage,
+            lastAssistantMessageBody: discovered.lastAssistantMessageBody ?? existing.lastAssistantMessageBody
         )
         return merged.isEmpty ? nil : merged
     }
