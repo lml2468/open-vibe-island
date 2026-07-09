@@ -9,7 +9,10 @@ slug: dedup-terminal-scripts
 upstream: arch-quality-audit-r2 (discovery finding #9, cluster A)
 source: self
 revision: 1
-approvals: []
+approvals:
+  - revision: 1
+    by: lml2468
+    at: 2026-07-09T05:27:02Z
 ---
 
 # Task: dedup-terminal-scripts
