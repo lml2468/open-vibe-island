@@ -1667,7 +1667,7 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
-        let mergedMetadata = mergedOpenCodeMetadata(
+        let mergedMetadata = BridgeMetadataMerging.mergedOpenCodeMetadata(
             existing: existingSession.openCodeMetadata,
             update: payload.defaultOpenCodeMetadata,
             hookEventName: payload.hookEventName
@@ -1689,63 +1689,6 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
         )
-    }
-
-    private func mergedOpenCodeMetadata(
-        existing: OpenCodeSessionMetadata?,
-        update: OpenCodeSessionMetadata,
-        hookEventName: OpenCodeHookEventName
-    ) -> OpenCodeSessionMetadata {
-        OpenCodeSessionMetadata(
-            initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
-            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
-            lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
-            currentTool: mergedOpenCodeCurrentTool(
-                existing: existing?.currentTool,
-                update: update.currentTool,
-                hookEventName: hookEventName
-            ),
-            currentToolInputPreview: mergedOpenCodeCurrentToolInputPreview(
-                existing: existing?.currentToolInputPreview,
-                update: update.currentToolInputPreview,
-                hookEventName: hookEventName
-            ),
-            model: update.model ?? existing?.model
-        )
-    }
-
-    private func mergedOpenCodeCurrentTool(
-        existing: String?,
-        update: String?,
-        hookEventName: OpenCodeHookEventName
-    ) -> String? {
-        if let update {
-            return update
-        }
-
-        switch hookEventName {
-        case .postToolUse, .stop, .sessionEnd:
-            return nil
-        case .sessionStart, .userPromptSubmit, .preToolUse, .permissionRequest, .questionAsked:
-            return existing
-        }
-    }
-
-    private func mergedOpenCodeCurrentToolInputPreview(
-        existing: String?,
-        update: String?,
-        hookEventName: OpenCodeHookEventName
-    ) -> String? {
-        if let update {
-            return update
-        }
-
-        switch hookEventName {
-        case .postToolUse, .stop, .sessionEnd:
-            return nil
-        case .sessionStart, .userPromptSubmit, .preToolUse, .permissionRequest, .questionAsked:
-            return existing
-        }
     }
 
     private func resolvePendingOpenCodeInteraction(
@@ -1901,7 +1844,7 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
-        let mergedMetadata = mergedCodexMetadata(
+        let mergedMetadata = BridgeMetadataMerging.mergedCodexMetadata(
             existing: existingSession.codexMetadata,
             update: payload.defaultCodexMetadata,
             hookEventName: payload.hookEventName
@@ -2022,7 +1965,7 @@ public final class BridgeServer: @unchecked Sendable {
             return
         }
 
-        let mergedMetadata = mergedClaudeMetadata(
+        let mergedMetadata = BridgeMetadataMerging.mergedClaudeMetadata(
             existing: existingSession.claudeMetadata,
             update: payload.defaultClaudeMetadata,
             hookEventName: payload.hookEventName
@@ -2043,81 +1986,6 @@ public final class BridgeServer: @unchecked Sendable {
                     timestamp: .now
                 )
             )
-        )
-    }
-
-    private func mergedCodexMetadata(
-        existing: CodexSessionMetadata?,
-        update: CodexSessionMetadata,
-        hookEventName: CodexHookEventName
-    ) -> CodexSessionMetadata {
-        CodexSessionMetadata(
-            transcriptPath: update.transcriptPath ?? existing?.transcriptPath,
-            initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
-            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
-            lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
-            currentTool: mergedCurrentTool(
-                existing: existing?.currentTool,
-                update: update.currentTool,
-                hookEventName: hookEventName
-            ),
-            currentCommandPreview: mergedCurrentCommandPreview(
-                existing: existing?.currentCommandPreview,
-                update: update.currentCommandPreview,
-                hookEventName: hookEventName
-            )
-        )
-    }
-
-    private func mergedCurrentTool(
-        existing: String?,
-        update: String?,
-        hookEventName: CodexHookEventName
-    ) -> String? {
-        if let update {
-            return update
-        }
-
-        switch hookEventName {
-        case .userPromptSubmit, .postToolUse, .stop:
-            return nil
-        case .sessionStart, .preToolUse, .permissionRequest:
-            return existing
-        }
-    }
-
-    private func mergedClaudeMetadata(
-        existing: ClaudeSessionMetadata?,
-        update: ClaudeSessionMetadata,
-        hookEventName: ClaudeHookEventName
-    ) -> ClaudeSessionMetadata {
-        ClaudeSessionMetadata(
-            transcriptPath: update.transcriptPath ?? existing?.transcriptPath,
-            initialUserPrompt: existing?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
-            lastUserPrompt: update.lastUserPrompt ?? existing?.lastUserPrompt,
-            lastAssistantMessage: update.lastAssistantMessage ?? existing?.lastAssistantMessage,
-            currentTool: mergedClaudeCurrentTool(
-                existing: existing?.currentTool,
-                update: update.currentTool,
-                hookEventName: hookEventName
-            ),
-            currentToolInputPreview: mergedClaudeCurrentToolInputPreview(
-                existing: existing?.currentToolInputPreview,
-                update: update.currentToolInputPreview,
-                hookEventName: hookEventName
-            ),
-            model: update.model ?? existing?.model,
-            startupSource: update.startupSource ?? existing?.startupSource,
-            permissionMode: update.permissionMode ?? existing?.permissionMode,
-            agentID: hookEventName.isSubagentLifecycle
-                ? existing?.agentID
-                : update.agentID ?? existing?.agentID,
-            agentType: hookEventName.isSubagentLifecycle
-                ? existing?.agentType
-                : update.agentType ?? existing?.agentType,
-            worktreeBranch: update.worktreeBranch ?? existing?.worktreeBranch,
-            activeSubagents: existing?.activeSubagents ?? [],
-            activeTasks: existing?.activeTasks ?? []
         )
     }
 
@@ -2359,57 +2227,6 @@ public final class BridgeServer: @unchecked Sendable {
                 )
             )
         )
-    }
-
-    private func mergedClaudeCurrentTool(
-        existing: String?,
-        update: String?,
-        hookEventName: ClaudeHookEventName
-    ) -> String? {
-        if let update {
-            return update
-        }
-
-        switch hookEventName {
-        case .postToolUse, .postToolUseFailure, .permissionDenied, .stop, .stopFailure, .sessionEnd:
-            return nil
-        case .sessionStart, .userPromptSubmit, .preToolUse, .permissionRequest, .notification, .subagentStart, .subagentStop, .preCompact:
-            return existing
-        }
-    }
-
-    private func mergedClaudeCurrentToolInputPreview(
-        existing: String?,
-        update: String?,
-        hookEventName: ClaudeHookEventName
-    ) -> String? {
-        if let update {
-            return update
-        }
-
-        switch hookEventName {
-        case .postToolUse, .postToolUseFailure, .permissionDenied, .stop, .stopFailure, .sessionEnd:
-            return nil
-        case .sessionStart, .userPromptSubmit, .preToolUse, .permissionRequest, .notification, .subagentStart, .subagentStop, .preCompact:
-            return existing
-        }
-    }
-
-    private func mergedCurrentCommandPreview(
-        existing: String?,
-        update: String?,
-        hookEventName: CodexHookEventName
-    ) -> String? {
-        if let update {
-            return update
-        }
-
-        switch hookEventName {
-        case .userPromptSubmit, .postToolUse, .stop:
-            return nil
-        case .sessionStart, .preToolUse, .permissionRequest:
-            return existing
-        }
     }
 
     private func resolvePendingApproval(sessionID: String, resolution: PermissionResolution) {
@@ -2712,7 +2529,7 @@ public final class BridgeServer: @unchecked Sendable {
     }
 }
 
-private extension ClaudeHookEventName {
+extension ClaudeHookEventName {
     var isSubagentLifecycle: Bool {
         self == .subagentStart || self == .subagentStop
     }
