@@ -7,17 +7,30 @@ import Foundation
 /// No server state / queue / socket access: the fetch + emit orchestration stays in
 /// the wrapper.
 enum BridgeSubagentState {
-    // RED STUBS — replaced in Green.
     static func adding(_ subagent: ClaudeSubagentInfo, to metadata: ClaudeSessionMetadata) -> ClaudeSessionMetadata {
-        metadata
+        var metadata = metadata
+        metadata.activeSubagents.removeAll { $0.agentID == subagent.agentID }
+        metadata.activeSubagents.append(subagent)
+        return metadata
     }
 
     static func removing(agentID: String, from metadata: ClaudeSessionMetadata) -> ClaudeSessionMetadata? {
-        nil
+        var metadata = metadata
+        let previousCount = metadata.activeSubagents.count
+        metadata.activeSubagents.removeAll { $0.agentID == agentID }
+        guard metadata.activeSubagents.count != previousCount else {
+            return nil
+        }
+        return metadata
     }
 
     static func clearingAll(from metadata: ClaudeSessionMetadata) -> ClaudeSessionMetadata? {
-        nil
+        guard !metadata.activeSubagents.isEmpty else {
+            return nil
+        }
+        var metadata = metadata
+        metadata.activeSubagents.removeAll()
+        return metadata
     }
 
     static func removingStale(
@@ -25,7 +38,17 @@ enum BridgeSubagentState {
         now: Date,
         timeout: TimeInterval
     ) -> ClaudeSessionMetadata? {
-        nil
+        guard !metadata.activeSubagents.isEmpty else {
+            return nil
+        }
+        var metadata = metadata
+        let before = metadata.activeSubagents.count
+        metadata.activeSubagents.removeAll { sub in
+            guard let started = sub.startedAt else { return false }
+            return now.timeIntervalSince(started) > timeout
+        }
+        guard metadata.activeSubagents.count != before else { return nil }
+        return metadata
     }
 }
 
@@ -33,14 +56,15 @@ enum BridgeSubagentState {
 /// `BridgeServer`. Same contract as `BridgeSubagentState`: `nil` = no change.
 /// `parseRealTaskID` is the pure parser for the TaskCreate tool response.
 enum BridgeTaskState {
-    // RED STUBS — replaced in Green.
     static func creating(
         title: String,
         id: String,
         status: ClaudeTaskInfo.Status,
         in metadata: ClaudeSessionMetadata
     ) -> ClaudeSessionMetadata {
-        metadata
+        var metadata = metadata
+        metadata.activeTasks.append(ClaudeTaskInfo(id: id, title: title, status: status))
+        return metadata
     }
 
     static func updatingStatus(
@@ -48,7 +72,11 @@ enum BridgeTaskState {
         status: ClaudeTaskInfo.Status?,
         in metadata: ClaudeSessionMetadata
     ) -> ClaudeSessionMetadata {
-        metadata
+        var metadata = metadata
+        if let idx = metadata.activeTasks.firstIndex(where: { $0.id == taskID }), let status {
+            metadata.activeTasks[idx].status = status
+        }
+        return metadata
     }
 
     static func replacingID(
@@ -56,10 +84,39 @@ enum BridgeTaskState {
         realID: String,
         in metadata: ClaudeSessionMetadata
     ) -> ClaudeSessionMetadata? {
-        nil
+        guard let idx = metadata.activeTasks.firstIndex(where: { $0.id == tempID }) else {
+            return nil
+        }
+        var metadata = metadata
+        metadata.activeTasks[idx].id = realID
+        return metadata
     }
 
+    /// Extract the real task ID from a TaskCreate tool response. Mirrors the shapes
+    /// Claude Code emits: nested `{"task": {"id": "7"}}` (string or number), top-level
+    /// `taskId`/`task_id`/`id`, or a string like `"Task #7 created successfully"`.
     static func parseRealTaskID(from response: ClaudeHookJSONValue?) -> String? {
-        nil
+        switch response {
+        case let .object(obj):
+            // Primary: nested under "task" object — {"task": {"id": "7"}}
+            if case let .object(taskObj) = obj["task"],
+               let idVal = taskObj["id"] ?? taskObj["taskId"] {
+                if case let .string(s) = idVal { return s }
+                if case let .number(n) = idVal { return String(Int(n)) }
+            }
+            // Fallback: top-level "taskId", "task_id", "id"
+            return (obj["taskId"] ?? obj["task_id"] ?? obj["id"]).flatMap {
+                if case let .string(s) = $0 { s } else { nil }
+            }
+        case let .string(s):
+            // Fallback for string responses like "Task #7 created successfully"
+            if let idRange = s.range(of: #"(?<=Task #)\S+"#, options: .regularExpression) {
+                return String(s[idRange])
+            }
+            let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        default:
+            return nil
+        }
     }
 }
