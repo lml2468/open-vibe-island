@@ -107,4 +107,35 @@ enum SessionListPresenter {
 
         return score
     }
+
+    // MARK: - Sectioning (RED STUBS — replaced in Green)
+
+    static func sections(
+        from surfaced: [AgentSession],
+        group: IslandSessionGroup,
+        sort: IslandSessionSort,
+        staleThresholdSeconds: TimeInterval,
+        now: Date
+    ) -> [IslandSessionSection] {
+        []
+    }
+
+    static func sortSessions(
+        _ sessions: [AgentSession],
+        by sort: IslandSessionSort
+    ) -> [AgentSession] {
+        []
+    }
+
+    static func stateGroupedSections(
+        from sessions: [AgentSession],
+        staleThresholdSeconds: TimeInterval,
+        now: Date
+    ) -> [IslandSessionSection] {
+        []
+    }
+
+    static func projectGroupName(for session: AgentSession) -> String {
+        ""
+    }
 }
