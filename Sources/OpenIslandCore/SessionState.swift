@@ -187,49 +187,29 @@ public struct SessionState: Equatable, Sendable {
             upsert(session)
 
         case let .sessionMetadataUpdated(payload):
-            guard var session = sessionsByID[payload.sessionID] else {
-                return
+            applySessionMetadata(sessionID: payload.sessionID, timestamp: payload.timestamp) {
+                $0.codexMetadata = payload.codexMetadata.isEmpty ? nil : payload.codexMetadata
             }
-
-            session.codexMetadata = payload.codexMetadata.isEmpty ? nil : payload.codexMetadata
-            session.updatedAt = payload.timestamp
-            upsert(session)
 
         case let .claudeSessionMetadataUpdated(payload):
-            guard var session = sessionsByID[payload.sessionID] else {
-                return
+            applySessionMetadata(sessionID: payload.sessionID, timestamp: payload.timestamp) {
+                $0.claudeMetadata = payload.claudeMetadata.isEmpty ? nil : payload.claudeMetadata
             }
-
-            session.claudeMetadata = payload.claudeMetadata.isEmpty ? nil : payload.claudeMetadata
-            session.updatedAt = payload.timestamp
-            upsert(session)
 
         case let .geminiSessionMetadataUpdated(payload):
-            guard var session = sessionsByID[payload.sessionID] else {
-                return
+            applySessionMetadata(sessionID: payload.sessionID, timestamp: payload.timestamp) {
+                $0.geminiMetadata = payload.geminiMetadata.isEmpty ? nil : payload.geminiMetadata
             }
-
-            session.geminiMetadata = payload.geminiMetadata.isEmpty ? nil : payload.geminiMetadata
-            session.updatedAt = payload.timestamp
-            upsert(session)
 
         case let .openCodeSessionMetadataUpdated(payload):
-            guard var session = sessionsByID[payload.sessionID] else {
-                return
+            applySessionMetadata(sessionID: payload.sessionID, timestamp: payload.timestamp) {
+                $0.openCodeMetadata = payload.openCodeMetadata.isEmpty ? nil : payload.openCodeMetadata
             }
-
-            session.openCodeMetadata = payload.openCodeMetadata.isEmpty ? nil : payload.openCodeMetadata
-            session.updatedAt = payload.timestamp
-            upsert(session)
 
         case let .cursorSessionMetadataUpdated(payload):
-            guard var session = sessionsByID[payload.sessionID] else {
-                return
+            applySessionMetadata(sessionID: payload.sessionID, timestamp: payload.timestamp) {
+                $0.cursorMetadata = payload.cursorMetadata.isEmpty ? nil : payload.cursorMetadata
             }
-
-            session.cursorMetadata = payload.cursorMetadata.isEmpty ? nil : payload.cursorMetadata
-            session.updatedAt = payload.timestamp
-            upsert(session)
 
         case let .actionableStateResolved(payload):
             guard var session = sessionsByID[payload.sessionID] else {
@@ -499,6 +479,27 @@ public struct SessionState: Equatable, Sendable {
     /// an explicit `.sessionStarted` revives it.
     private func isTerminalAndMustNotResurrect(_ session: AgentSession) -> Bool {
         session.isSessionEnded
+    }
+
+    /// Shared skeleton for the per-agent `*SessionMetadataUpdated` arms: no-op if
+    /// the session is unknown, otherwise apply the caller's metadata mutation, set
+    /// the caller-supplied timestamp, and upsert. The `isEmpty ? nil` decision
+    /// stays in each caller's closure because every metadata type has its own
+    /// `isEmpty`. Metadata updates are phase-neutral, so — unlike the phase-changing
+    /// arms — this path deliberately does NOT route through
+    /// `isTerminalAndMustNotResurrect`.
+    private mutating func applySessionMetadata(
+        sessionID: String,
+        timestamp: Date,
+        mutate: (inout AgentSession) -> Void
+    ) {
+        guard var session = sessionsByID[sessionID] else {
+            return
+        }
+
+        mutate(&session)
+        session.updatedAt = timestamp
+        upsert(session)
     }
 
     private mutating func upsert(_ session: AgentSession) {
