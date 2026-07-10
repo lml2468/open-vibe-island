@@ -135,31 +135,34 @@ struct SessionSectioningTests {
     func attentionSortPreservesSurfacedOrderUnlikeLastUpdate() {
         let now = Date()
 
+        // Make surfaced (priority) order DIVERGE from activity-date order: an OLDER
+        // waiting-for-approval session outranks a NEWER running one by displayPriority,
+        // so surfacedSessions = [attnOlder, runNewer] while .lastUpdate would put the
+        // newer one first. This distinguishes .attention (identity) from any re-sort.
+        var attnOlder = session(id: "attn-older", updatedAt: now.addingTimeInterval(-100))
+        attnOlder.phase = .waitingForApproval
+        attnOlder.permissionRequest = PermissionRequest(title: "Approve", summary: "run", affectedPath: "/tmp")
+        let runNewer = session(id: "run-newer", updatedAt: now)   // .running (from helper)
+
         let attentionModel = AppModel()
         attentionModel.islandSessionGroup = .none
         attentionModel.islandSessionSort = .attention
-
-        // Two running+alive sessions; surfaced order comes from bucketing (equal
-        // priority → activity-date desc then title). Give distinct activity dates.
-        let older = session(id: "older", updatedAt: now.addingTimeInterval(-100))
-        let newer = session(id: "newer", updatedAt: now)
-        attentionModel.state = SessionState(sessions: [older, newer])
+        attentionModel.state = SessionState(sessions: [attnOlder, runNewer])
         let attentionOrder = attentionModel.islandSessionSections.first?.sessions.map(\.id) ?? []
+        let surfacedOrder = attentionModel.surfacedSessions.map(\.id)
 
-        // .attention returns the surfaced order unchanged (identity on the input).
         let lastUpdateModel = AppModel()
         lastUpdateModel.islandSessionGroup = .none
         lastUpdateModel.islandSessionSort = .lastUpdate
-        lastUpdateModel.state = SessionState(sessions: [older, newer])
+        lastUpdateModel.state = SessionState(sessions: [attnOlder, runNewer])
         let lastUpdateOrder = lastUpdateModel.islandSessionSections.first?.sessions.map(\.id) ?? []
 
-        // .lastUpdate sorts by activity date desc → newer first.
-        #expect(lastUpdateOrder == ["newer", "older"])
-        // .attention is identity over the surfaced list (it does not re-sort).
-        // Assert it carries all sessions and equals the surfaced order (which for
-        // these equal-priority sessions is also newer-first from bucketing) —
-        // the key property is that .attention itself applies no reordering.
-        #expect(Set(attentionOrder) == ["older", "newer"])
-        #expect(attentionOrder == attentionModel.surfacedSessions.map(\.id))
+        // Priority-ranked surfaced order puts the attention session first (older).
+        #expect(surfacedOrder == ["attn-older", "run-newer"])
+        // .attention is identity → equals surfaced order (attention-first).
+        #expect(attentionOrder == ["attn-older", "run-newer"])
+        // .lastUpdate re-sorts by activity date desc → newer first, diverging from
+        // surfaced order — so the identity assertion above genuinely pins "no re-sort".
+        #expect(lastUpdateOrder == ["run-newer", "attn-older"])
     }
 }
