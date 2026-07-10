@@ -1990,44 +1990,20 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func addSubagent(_ subagent: ClaudeSubagentInfo, toSession sessionID: String) {
-        guard var metadata = localState.session(id: sessionID)?.claudeMetadata else {
+        guard let metadata = localState.session(id: sessionID)?.claudeMetadata else {
             return
         }
 
-        metadata.activeSubagents.removeAll { $0.agentID == subagent.agentID }
-        metadata.activeSubagents.append(subagent)
-
-        emit(
-            .claudeSessionMetadataUpdated(
-                ClaudeSessionMetadataUpdated(
-                    sessionID: sessionID,
-                    claudeMetadata: metadata,
-                    timestamp: .now
-                )
-            )
-        )
+        emitClaudeMetadata(BridgeSubagentState.adding(subagent, to: metadata), forSession: sessionID)
     }
 
     private func removeSubagent(agentID: String, fromSession sessionID: String) {
-        guard var metadata = localState.session(id: sessionID)?.claudeMetadata else {
+        guard let metadata = localState.session(id: sessionID)?.claudeMetadata,
+              let updated = BridgeSubagentState.removing(agentID: agentID, from: metadata) else {
             return
         }
 
-        let previousCount = metadata.activeSubagents.count
-        metadata.activeSubagents.removeAll { $0.agentID == agentID }
-        guard metadata.activeSubagents.count != previousCount else {
-            return
-        }
-
-        emit(
-            .claudeSessionMetadataUpdated(
-                ClaudeSessionMetadataUpdated(
-                    sessionID: sessionID,
-                    claudeMetadata: metadata,
-                    timestamp: .now
-                )
-            )
-        )
+        emitClaudeMetadata(updated, forSession: sessionID)
     }
 
     /// Removes subagents that have been inactive for too long.
@@ -2036,29 +2012,16 @@ public final class BridgeServer: @unchecked Sendable {
     private static let subagentStaleTimeout: TimeInterval = 3 * 60  // 3 minutes
 
     private func cleanUpStaleSubagents(forSession sessionID: String) {
-        guard var metadata = localState.session(id: sessionID)?.claudeMetadata,
-              !metadata.activeSubagents.isEmpty else {
+        guard let metadata = localState.session(id: sessionID)?.claudeMetadata,
+              let updated = BridgeSubagentState.removingStale(
+                from: metadata,
+                now: Date.now,
+                timeout: Self.subagentStaleTimeout
+              ) else {
             return
         }
 
-        let now = Date.now
-        let before = metadata.activeSubagents.count
-        metadata.activeSubagents.removeAll { sub in
-            guard let started = sub.startedAt else { return false }
-            return now.timeIntervalSince(started) > Self.subagentStaleTimeout
-        }
-
-        guard metadata.activeSubagents.count != before else { return }
-
-        emit(
-            .claudeSessionMetadataUpdated(
-                ClaudeSessionMetadataUpdated(
-                    sessionID: sessionID,
-                    claudeMetadata: metadata,
-                    timestamp: .now
-                )
-            )
-        )
+        emitClaudeMetadata(updated, forSession: sessionID)
     }
 
     /// Drops cached preToolUse/Agent/TaskCreate context for a session.
@@ -2111,22 +2074,12 @@ public final class BridgeServer: @unchecked Sendable {
     /// Called when the session's turn ends (`stop`, `stopFailure`, `sessionEnd`)
     /// to ensure no stale subagent indicators linger.
     private func clearAllActiveSubagents(fromSession sessionID: String) {
-        guard var metadata = localState.session(id: sessionID)?.claudeMetadata,
-              !metadata.activeSubagents.isEmpty else {
+        guard let metadata = localState.session(id: sessionID)?.claudeMetadata,
+              let updated = BridgeSubagentState.clearingAll(from: metadata) else {
             return
         }
 
-        metadata.activeSubagents.removeAll()
-
-        emit(
-            .claudeSessionMetadataUpdated(
-                ClaudeSessionMetadataUpdated(
-                    sessionID: sessionID,
-                    claudeMetadata: metadata,
-                    timestamp: .now
-                )
-            )
-        )
+        emitClaudeMetadata(updated, forSession: sessionID)
     }
 
     /// Returns the temporary task ID if a task was created, nil otherwise.
@@ -2136,11 +2089,12 @@ public final class BridgeServer: @unchecked Sendable {
         toolName: String,
         sessionID: String
     ) -> String? {
-        guard var metadata = localState.session(id: sessionID)?.claudeMetadata else {
+        guard let metadata = localState.session(id: sessionID)?.claudeMetadata else {
             return nil
         }
 
         var createdID: String?
+        let updatedMetadata: ClaudeSessionMetadata
 
         if toolName == "TaskCreate" {
             guard case let .string(title) = input["subject"] ?? input["description"] else { return nil }
@@ -2148,7 +2102,7 @@ public final class BridgeServer: @unchecked Sendable {
                 ?? UUID().uuidString
             let statusStr = (input["status"]).flatMap { if case let .string(s) = $0 { s } else { nil } }
             let status = statusStr.flatMap { ClaudeTaskInfo.Status(rawValue: $0) } ?? .pending
-            metadata.activeTasks.append(ClaudeTaskInfo(id: id, title: title, status: status))
+            updatedMetadata = BridgeTaskState.creating(title: title, id: id, status: status, in: metadata)
             createdID = id
         } else if toolName == "TaskUpdate" {
             // Claude Code sends "taskId" (camelCase) in TaskUpdate tool_input
@@ -2156,23 +2110,14 @@ public final class BridgeServer: @unchecked Sendable {
                 if case let .string(s) = $0 { s } else { nil }
             }
             guard let taskId else { return nil }
-            if let idx = metadata.activeTasks.firstIndex(where: { $0.id == taskId }) {
-                if let statusStr = (input["status"]).flatMap({ if case let .string(s) = $0 { s } else { nil } }),
-                   let status = ClaudeTaskInfo.Status(rawValue: statusStr) {
-                    metadata.activeTasks[idx].status = status
-                }
-            }
+            let status = (input["status"]).flatMap { if case let .string(s) = $0 { s } else { nil } }
+                .flatMap { ClaudeTaskInfo.Status(rawValue: $0) }
+            updatedMetadata = BridgeTaskState.updatingStatus(taskID: taskId, status: status, in: metadata)
+        } else {
+            updatedMetadata = metadata
         }
 
-        emit(
-            .claudeSessionMetadataUpdated(
-                ClaudeSessionMetadataUpdated(
-                    sessionID: sessionID,
-                    claudeMetadata: metadata,
-                    timestamp: .now
-                )
-            )
-        )
+        emitClaudeMetadata(updatedMetadata, forSession: sessionID)
 
         return createdID
     }
@@ -2183,41 +2128,25 @@ public final class BridgeServer: @unchecked Sendable {
         tempID: String,
         response: ClaudeHookJSONValue?
     ) {
-        guard var metadata = localState.session(id: sessionID)?.claudeMetadata,
-              let idx = metadata.activeTasks.firstIndex(where: { $0.id == tempID }) else {
+        guard let metadata = localState.session(id: sessionID)?.claudeMetadata,
+              metadata.activeTasks.contains(where: { $0.id == tempID }) else {
             return
         }
 
-        // Try to extract the real task ID from the tool response.
-        // Actual response format: {"task": {"id": "7", "subject": "..."}}
-        let realID: String? = {
-            switch response {
-            case let .object(obj):
-                // Primary: nested under "task" object — {"task": {"id": "7"}}
-                if case let .object(taskObj) = obj["task"],
-                   let idVal = taskObj["id"] ?? taskObj["taskId"] {
-                    if case let .string(s) = idVal { return s }
-                    if case let .number(n) = idVal { return String(Int(n)) }
-                }
-                // Fallback: top-level "taskId", "task_id", "id"
-                return (obj["taskId"] ?? obj["task_id"] ?? obj["id"]).flatMap {
-                    if case let .string(s) = $0 { s } else { nil }
-                }
-            case let .string(s):
-                // Fallback for string responses like "Task #7 created successfully"
-                if let idRange = s.range(of: #"(?<=Task #)\S+"#, options: .regularExpression) {
-                    return String(s[idRange])
-                }
-                let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-                return trimmed.isEmpty ? nil : trimmed
-            default:
-                return nil
-            }
-        }()
+        guard let realID = BridgeTaskState.parseRealTaskID(from: response), !realID.isEmpty else { return }
 
-        guard let realID, !realID.isEmpty else { return }
+        guard let updated = BridgeTaskState.replacingID(tempID: tempID, realID: realID, in: metadata) else {
+            return
+        }
 
-        metadata.activeTasks[idx].id = realID
+        emitClaudeMetadata(updated, forSession: sessionID)
+    }
+
+    /// Emits a `.claudeSessionMetadataUpdated` event carrying `metadata` for the
+    /// session. The subagent/task wrappers delegate their array logic to the pure
+    /// `BridgeSubagentState`/`BridgeTaskState` namespaces, then call this to apply +
+    /// broadcast — keeping all state/transport orchestration in one place.
+    private func emitClaudeMetadata(_ metadata: ClaudeSessionMetadata, forSession sessionID: String) {
         emit(
             .claudeSessionMetadataUpdated(
                 ClaudeSessionMetadataUpdated(
