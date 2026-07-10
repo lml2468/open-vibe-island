@@ -81,6 +81,10 @@ public final class BridgeServer: @unchecked Sendable {
     /// overwritten whenever AppModel pushes a fresh snapshot.
     private var localState = SessionState()
 
+    /// Per-agent hook handler (proof-of-concept seam, discovery #3). Only Gemini is
+    /// extracted so far; the other agents' `handle*Hook` remain inline.
+    private let geminiHookHandler = GeminiHookHandler()
+
     public init(
         socketURL: URL = BridgeSocketLocation.defaultURL
     ) {
@@ -1331,171 +1335,8 @@ public final class BridgeServer: @unchecked Sendable {
     }
 
     private func handleGeminiHook(_ payload: GeminiHookPayload, from clientID: UUID) {
-        switch payload.hookEventName {
-        case .sessionStart:
-            emit(
-                .sessionStarted(
-                    SessionStarted(
-                        sessionID: payload.sessionID,
-                        title: payload.sessionTitle,
-                        tool: .geminiCLI,
-                        origin: .live,
-                        initialPhase: .completed,
-                        summary: payload.implicitSummary,
-                        timestamp: .now,
-                        jumpTarget: payload.defaultJumpTarget,
-                        geminiMetadata: payload.defaultGeminiMetadata.isEmpty ? nil : payload.defaultGeminiMetadata
-                    )
-                )
-            )
-            send(.response(.acknowledged), to: clientID)
-
-        case .beforeAgent:
-            ensureGeminiSessionExists(for: payload)
-            synchronizeGeminiJumpTarget(for: payload)
-            synchronizeGeminiMetadata(for: payload)
-            emit(
-                .activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: payload.sessionID,
-                        summary: payload.implicitSummary,
-                        phase: .running,
-                        timestamp: .now
-                    )
-                )
-            )
-            send(.response(.acknowledged), to: clientID)
-
-        case .afterAgent:
-            ensureGeminiSessionExists(for: payload)
-            synchronizeGeminiJumpTarget(for: payload)
-            synchronizeGeminiMetadata(for: payload)
-            emit(
-                .sessionCompleted(
-                    SessionCompleted(
-                        sessionID: payload.sessionID,
-                        summary: payload.implicitSummary,
-                        timestamp: .now
-                    )
-                )
-            )
-            send(.response(.acknowledged), to: clientID)
-
-        case .sessionEnd:
-            ensureGeminiSessionExists(for: payload)
-            synchronizeGeminiJumpTarget(for: payload)
-            synchronizeGeminiMetadata(for: payload)
-            emit(
-                .sessionCompleted(
-                    SessionCompleted(
-                        sessionID: payload.sessionID,
-                        summary: payload.reason.map { "Gemini CLI session ended: \($0)." } ?? payload.implicitSummary,
-                        timestamp: .now,
-                        isInterrupt: true,
-                        isSessionEnd: true
-                    )
-                )
-            )
-            send(.response(.acknowledged), to: clientID)
-
-        case .notification:
-            ensureGeminiSessionExists(for: payload)
-            synchronizeGeminiJumpTarget(for: payload)
-            synchronizeGeminiMetadata(for: payload)
-
-            let currentPhase = localState.session(id: payload.sessionID)?.phase ?? .completed
-            emit(
-                .activityUpdated(
-                    SessionActivityUpdated(
-                        sessionID: payload.sessionID,
-                        summary: payload.notificationSummary,
-                        phase: currentPhase,
-                        timestamp: .now
-                    )
-                )
-            )
-
-            send(.response(.acknowledged), to: clientID)
-        }
-    }
-
-    private func ensureGeminiSessionExists(for payload: GeminiHookPayload) {
-        guard !hasSession(id: payload.sessionID) else {
-            return
-        }
-
-        emit(
-            .sessionStarted(
-                SessionStarted(
-                    sessionID: payload.sessionID,
-                    title: payload.sessionTitle,
-                    tool: .geminiCLI,
-                    origin: .live,
-                    initialPhase: .completed,
-                    summary: payload.hookEventName == .notification ? payload.notificationSummary : payload.implicitSummary,
-                    timestamp: .now,
-                    jumpTarget: payload.defaultJumpTarget,
-                    geminiMetadata: payload.defaultGeminiMetadata.isEmpty ? nil : payload.defaultGeminiMetadata
-                )
-            )
-        )
-    }
-
-    private func synchronizeGeminiJumpTarget(for payload: GeminiHookPayload) {
-        guard let existingSession = localState.session(id: payload.sessionID) else {
-            return
-        }
-
-        let jumpTarget = Self.mergeJumpTargetPreservingExistingResolvedFields(
-            incoming: payload.defaultJumpTarget,
-            existing: existingSession.jumpTarget
-        )
-
-        guard existingSession.jumpTarget != jumpTarget else {
-            return
-        }
-
-        emit(
-            .jumpTargetUpdated(
-                JumpTargetUpdated(
-                    sessionID: payload.sessionID,
-                    jumpTarget: jumpTarget,
-                    timestamp: .now
-                )
-            )
-        )
-    }
-
-    private func synchronizeGeminiMetadata(for payload: GeminiHookPayload) {
-        guard let existingSession = localState.session(id: payload.sessionID) else {
-            return
-        }
-
-        let update = payload.defaultGeminiMetadata
-        let merged = GeminiSessionMetadata(
-            transcriptPath: update.transcriptPath ?? existingSession.geminiMetadata?.transcriptPath,
-            initialUserPrompt: existingSession.geminiMetadata?.initialUserPrompt ?? update.initialUserPrompt ?? update.lastUserPrompt,
-            lastUserPrompt: update.lastUserPrompt ?? existingSession.geminiMetadata?.lastUserPrompt,
-            lastAssistantMessage: update.lastAssistantMessage ?? existingSession.geminiMetadata?.lastAssistantMessage,
-            lastAssistantMessageBody: update.lastAssistantMessageBody ?? existingSession.geminiMetadata?.lastAssistantMessageBody
-        )
-        guard !merged.isEmpty else {
-            return
-        }
-
-        guard existingSession.geminiMetadata != merged else {
-            return
-        }
-
-        emit(
-            .geminiSessionMetadataUpdated(
-                GeminiSessionMetadataUpdated(
-                    sessionID: payload.sessionID,
-                    geminiMetadata: merged,
-                    timestamp: .now
-                )
-            )
-        )
+        dispatchPrecondition(condition: .onQueue(queue))
+        geminiHookHandler.handle(payload, from: clientID, context: self)
     }
 
     private func clearStaleCursorInteractionIfNeeded(for sessionID: String) {
@@ -2345,16 +2186,24 @@ public final class BridgeServer: @unchecked Sendable {
         return .object(updatedObject)
     }
 
-    private func emit(_ event: AgentEvent) {
+    func emit(_ event: AgentEvent) {
         localState.apply(event)
         broadcast([.event(event)])
     }
 
-    private func hasSession(id: String) -> Bool {
+    func hasSession(id: String) -> Bool {
         localState.session(id: id) != nil || stateSnapshot.session(id: id) != nil
     }
 
-    private func send(_ envelope: BridgeEnvelope, to clientID: UUID) {
+    /// The server's working (`localState`) session, if any. Distinct from
+    /// `hasSession`, which also considers the AppModel-pushed snapshot. Exposed for
+    /// `AgentHookContext` — handlers read only `localState`, matching their prior
+    /// direct `localState.session(id:)` access.
+    func session(id: String) -> AgentSession? {
+        localState.session(id: id)
+    }
+
+    func send(_ envelope: BridgeEnvelope, to clientID: UUID) {
         guard let client = clients[clientID] else {
             return
         }
@@ -2463,3 +2312,8 @@ extension ClaudeHookEventName {
         self == .subagentStart || self == .subagentStop
     }
 }
+
+/// BridgeServer exposes exactly the synchronous emit/send/session surface an
+/// extracted per-agent handler needs. `emit`, `send`, `hasSession`, and `session`
+/// are defined on the class above; this conformance is the seam the handlers use.
+extension BridgeServer: AgentHookContext {}
