@@ -108,7 +108,7 @@ enum SessionListPresenter {
         return score
     }
 
-    // MARK: - Sectioning (RED STUBS — replaced in Green)
+    // MARK: - Sectioning
 
     static func sections(
         from surfaced: [AgentSession],
@@ -117,14 +117,51 @@ enum SessionListPresenter {
         staleThresholdSeconds: TimeInterval,
         now: Date
     ) -> [IslandSessionSection] {
-        []
+        let sessions = sortSessions(surfaced, by: sort)
+        switch group {
+        case .none:
+            return [
+                IslandSessionSection(
+                    id: "all",
+                    title: "island.section.sessions",
+                    sessions: sessions
+                )
+            ]
+        case .state:
+            return stateGroupedSections(from: sessions, staleThresholdSeconds: staleThresholdSeconds, now: now)
+        case .agent:
+            return AgentTool.allCases.compactMap { tool in
+                let list = sessions.filter { $0.tool == tool }
+                guard !list.isEmpty else { return nil }
+                return IslandSessionSection(id: "agent-\(tool.rawValue)", title: tool.displayName, sessions: list)
+            }
+        case .project:
+            let names = Set(sessions.map(projectGroupName(for:))).sorted {
+                $0.localizedStandardCompare($1) == .orderedAscending
+            }
+            return names.compactMap { name in
+                let list = sessions.filter { projectGroupName(for: $0) == name }
+                guard !list.isEmpty else { return nil }
+                return IslandSessionSection(id: "project-\(name)", title: name, sessions: list)
+            }
+        }
     }
 
     static func sortSessions(
         _ sessions: [AgentSession],
         by sort: IslandSessionSort
     ) -> [AgentSession] {
-        []
+        switch sort {
+        case .attention:
+            return sessions
+        case .lastUpdate:
+            return sessions.sorted { lhs, rhs in
+                if lhs.islandActivityDate == rhs.islandActivityDate {
+                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+                }
+                return lhs.islandActivityDate > rhs.islandActivityDate
+            }
+        }
     }
 
     static func stateGroupedSections(
@@ -132,10 +169,39 @@ enum SessionListPresenter {
         staleThresholdSeconds: TimeInterval,
         now: Date
     ) -> [IslandSessionSection] {
-        []
+        let definitions: [(id: String, title: String, include: (AgentSession) -> Bool)] = [
+            ("approval", "island.section.needsApproval", { $0.phase == .waitingForApproval }),
+            ("answer", "island.section.needsAnswer", { $0.phase == .waitingForAnswer }),
+            ("running", "island.section.inProgress", { $0.phase == .running }),
+            ("done", "island.section.justDone", { session in
+                session.phase == .completed
+                    && !session.isStaleCompletedForIsland(at: now, threshold: staleThresholdSeconds)
+            }),
+            ("idle", "island.section.idle", { session in
+                session.phase == .completed
+                    && session.isStaleCompletedForIsland(at: now, threshold: staleThresholdSeconds)
+            }),
+        ]
+
+        return definitions.compactMap { definition in
+            let list = sessions.filter(definition.include)
+            guard !list.isEmpty else { return nil }
+            return IslandSessionSection(id: "state-\(definition.id)", title: definition.title, sessions: list)
+        }
     }
 
     static func projectGroupName(for session: AgentSession) -> String {
-        ""
+        if let workspace = session.jumpTarget?.workspaceName.trimmingCharacters(in: .whitespacesAndNewlines),
+           !workspace.isEmpty {
+            return workspace
+        }
+
+        let title = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return session.tool.displayName }
+
+        let pieces = title.split(separator: "·", maxSplits: 1).map {
+            String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return pieces.last?.isEmpty == false ? pieces.last! : title
     }
 }
