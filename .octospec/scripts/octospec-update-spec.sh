@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # octospec-update-spec — Finish-phase learning reflow tool.
 #
-# Turns a single task's learning into the right artifact BY KIND. The script
-# never auto-writes main's rules/ — that safety floor keeps the comprehension
-# gate human — but it produces the material the author uses to land the rule
-# IN THE SAME PR. This is the executable backing for the parity design §3
-# (learning reflow) / §6 (task context).
+# Turns a single task's reusable learning into a rule DRAFT + promotion material.
+# The script never auto-writes main's rules/ — that safety floor keeps the
+# comprehension gate human — but it produces the material the author uses to land
+# the rule IN THE SAME PR. This is the executable backing for the parity design §3
+# (learning reflow).
 #
-# Two reflow paths, selected with --kind:
+# One reflow path (`--kind=rule`):
 #
 #   --kind=rule  (規範級 / rule-level)
 #     A learning that should constrain EVERY future task. The script:
 #       1. writes a DRAFT OKF Rule (full frontmatter + octospec extension fields)
-#          to  .octospec/learnings/pending/<slug>-rule-draft.md
-#          — pending/ here is scratch material for THIS PR, not a dead-letter to
-#            be promoted in some future PR;
+#          to  .octospec/tasks/<slug>/<slug>-rule-draft.md
+#          — scratch material for THIS PR (lives beside the task's spec/discovery,
+#            deleted once the rule lands), not a dead-letter to promote later;
 #       2. prints promotion material to stdout (proposed rule body + COMPREHENSION
 #          three questions + a checklist) so the AUTHOR can, in this same PR,
 #          land the rule into .octospec/rules/<id>.md and add the
@@ -24,33 +24,31 @@
 #     rules/_index.yaml — that is the only step it leaves to the author, and it
 #     happens in the same PR, never a separate one.
 #
-#   --kind=task  (任務級 / task-level)
-#     A reusable, actor-scoped learning that should be committed with the work,
-#     not enforced on everyone. The script writes a per-actor journal entry to
-#       .octospec/journal/by-actor/<actor>/<slug>.md
-#     with OKF `type: Journal` frontmatter. It stays IN THE REPO — octospec is
-#     self-contained and never writes to any external/personal memory service.
+#   Task-level journals are NOT written by this helper. The Finish phase writes
+#   the task journal directly to the flat `.octospec/journal/<slug>.md` (one-line
+#   Result + `## Learning`) from `_journal.template.md`. The former `--kind=task`
+#   per-actor `journal/by-actor/` lane was removed in 2.1.0 (flat single journal).
 #
-# Idempotency: rerunning the same slug+kind does not pile up files. By default the
-# rule draft / journal entry is OVERWRITTEN in place; with --skip-existing an
-# existing file is left untouched.
+# Idempotency: rerunning the same slug does not pile up files. By default the rule
+# draft is OVERWRITTEN in place; with --skip-existing an existing file is left
+# untouched.
 #
-# No hard external dependencies. Style mirrors octospec-sync.sh /
-# octospec_sync_block.py (set -euo pipefail, atomic writes, explicit refusals).
+# No hard external dependencies. Style mirrors octospec-sync.sh (set -euo
+# pipefail, atomic writes, explicit refusals).
 #
 # Usage:
-#   octospec-update-spec.sh --slug <slug> --kind rule|task [--learning <text>] [opts]
+#   octospec-update-spec.sh --slug <slug> --kind rule [--learning <text>] [opts]
 #   echo "<learning text>" | octospec-update-spec.sh --slug <slug> --kind rule
 #
 # Common options:
 #   --slug <slug>            (required) kebab-case task slug.
-#   --kind rule|task         (required) reflow path.
+#   --kind rule              (required) reflow path (only `rule` is supported).
 #   --learning <text>        Learning text. If omitted, read from stdin.
-#   --skip-existing          do not overwrite an existing draft / journal entry.
-#   --no-promote             rule: write the draft but suppress the promotion
-#                            material on stdout (escape hatch to avoid noise).
+#   --skip-existing          do not overwrite an existing draft.
+#   --no-promote             write the draft but suppress the promotion material
+#                            on stdout (escape hatch to avoid noise).
 #
-# Rule-only options (sane defaults; the human refines in review):
+# Rule options (sane defaults; the human refines in review):
 #   --title <title>          Rule title (default: derived from slug).
 #   --description <text>     Rule description (default: first line of learning).
 #   --tags <a,b,c>           OKF tags (default: from --inject-touches or slug).
@@ -60,12 +58,6 @@
 #   --load-bearing           Mark load_bearing: true (default: false).
 #   --inject-paths <g,...>   inject_when.paths globs (default: ["**"]).
 #   --inject-touches <t,...> inject_when.touches tags (default: []).
-#
-# Task-only options:
-#   --actor <name>           Actor handle for the journal lane (default: derived
-#                            from `git config user.name`, lowercased to [a-z0-9-]).
-#   --tags <a,b,c>           OKF Journal tags (default: ["octospec-learning","<slug>"]).
-#   --title <title>          Journal title (default: derived from slug).
 #
 # Exit codes: 0 ok; 2 = usage error / refusal.
 set -euo pipefail
@@ -84,8 +76,6 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # is invoked against a target repo's .octospec/, which is NOT the script's own
 # parent once installed). Fall back to scripts/.. only when unset.
 OCTOSPEC_DIR="${OCTOSPEC_DIR:-$(cd "$HERE/.." && pwd)}"   # scripts/ -> .octospec/
-PENDING_DIR="$OCTOSPEC_DIR/learnings/pending"
-BY_ACTOR_DIR="$OCTOSPEC_DIR/journal/by-actor"
 
 # --- defaults -----------------------------------------------------------------
 SLUG=""
@@ -103,7 +93,6 @@ PRIORITY="50"
 LOAD_BEARING="false"
 INJECT_PATHS=""
 INJECT_TOUCHES=""
-ACTOR=""
 
 # --- arg parsing (supports `--opt val` and `--opt=val`) -----------------------
 while [ $# -gt 0 ]; do
@@ -137,7 +126,6 @@ while [ $# -gt 0 ]; do
     --priority)      PRIORITY="$(takeval "$@")"; [ -n "$val" ] || shift;;
     --inject-paths)  INJECT_PATHS="$(takeval "$@")"; [ -n "$val" ] || shift;;
     --inject-touches) INJECT_TOUCHES="$(takeval "$@")"; [ -n "$val" ] || shift;;
-    --actor)         ACTOR="$(takeval "$@")"; [ -n "$val" ] || shift;;
     --load-bearing)  LOAD_BEARING="true";;
     --skip-existing) SKIP_EXISTING=1;;
     --no-promote)    NO_PROMOTE=1;;
@@ -150,8 +138,12 @@ done
 
 # --- validate -----------------------------------------------------------------
 [ -n "$SLUG" ] || die "--slug is required"
-[ -n "$KIND" ] || die "--kind is required (rule|task)"
-case "$KIND" in rule|task) :;; *) die "--kind must be 'rule' or 'task', got: $KIND";; esac
+[ -n "$KIND" ] || die "--kind is required (rule)"
+case "$KIND" in
+  rule) :;;
+  task) die "--kind=task was removed in 2.1.0; the Finish phase writes the flat journal/<slug>.md directly (see octospec-workflow SKILL §6)";;
+  *) die "--kind must be 'rule', got: $KIND";;
+esac
 case "$SLUG" in
   [a-z]*) :;;
   *) die "--slug must be kebab-case, start with a letter: $SLUG";;
@@ -222,7 +214,7 @@ csv_to_flow_seq() {
   printf '[%s]' "$out"
 }
 
-# Atomic write: temp file in target dir + mv (mirrors octospec_sync_block.py).
+# Atomic write: temp file in target dir + mv (mirrors octospec-sync.sh).
 atomic_write() {
   local target="$1" content="$2" dir tmp
   dir="$(dirname "$target")"
@@ -262,7 +254,14 @@ if [ "$KIND" = "rule" ]; then
     PATHS_SEQ='["**"]'
   fi
 
-  DRAFT_PATH="$PENDING_DIR/${SLUG}-rule-draft.md"
+  # The rule draft is scratch material for THIS PR: it lives alongside the task's
+  # spec/discovery under tasks/<slug>/, so it rides the task branch, is visible in
+  # review, and is deleted once the author lands the rule into rules/. (There is no
+  # separate learnings/pending/ dead-letter — a finished rule goes to rules/, an
+  # unfinished idea goes in the task journal's ## Learning.)
+  DRAFT_DIR="$OCTOSPEC_DIR/tasks/$SLUG"
+  DRAFT_PATH="$DRAFT_DIR/${SLUG}-rule-draft.md"
+  mkdir -p "$DRAFT_DIR"
 
   if [ -e "$DRAFT_PATH" ] && [ "$SKIP_EXISTING" -eq 1 ]; then
     echo "$PROG: draft exists, --skip-existing set; leaving $DRAFT_PATH untouched" >&2
@@ -303,8 +302,9 @@ draft_source_slug: $SLUG
 $LEARNING
 
 ## Why load-bearing
-<!-- Reviewer: state why every future task must obey this, or downgrade to an
-     actor-scoped journal note (--kind=task) instead. -->
+<!-- Reviewer: state why every future task must obey this. If it does NOT bind
+     every future task, don't promote it to a rule — record it in the task's own
+     journal (.octospec/journal/<slug>.md, the `## Learning` section) instead. -->
 EOF
 )"
     atomic_write "$DRAFT_PATH" "$DRAFT_CONTENT
@@ -318,12 +318,12 @@ EOF
     exit 0
   fi
 
-  REL_DRAFT=".octospec/learnings/pending/${SLUG}-rule-draft.md"
-  REL_BRIEF=".octospec/tasks/${SLUG}/brief.md"
+  REL_DRAFT=".octospec/tasks/${SLUG}/${SLUG}-rule-draft.md"
+  REL_SPEC=".octospec/tasks/${SLUG}/spec.md"
   cat <<EOF
 ## Rule reflow: $TITLE
 
-**Linked task:** \`$REL_BRIEF\` (slug: \`$SLUG\`)
+**Linked task:** \`$REL_SPEC\` (slug: \`$SLUG\`)
 **Proposed rule:** id \`$RULE_ID\`, tier \`$TIER\`, priority \`$PRIORITY\`, load_bearing \`$LOAD_BEARING\`
 **Draft (scratch material for this PR):** \`$REL_DRAFT\`
 
@@ -346,92 +346,10 @@ $LEARNING
 ### Author checklist (do these in this PR)
 - [ ] inject_when (paths/touches) scopes the rule to where it actually applies.
 - [ ] load_bearing/priority/tier are justified.
-- [ ] Belongs in rules/ (binds everyone) vs journal/by-actor/ (one actor's note).
+- [ ] Belongs in rules/ (binds everyone) vs the task journal (.octospec/journal/<slug>.md, one task's note).
 - [ ] Land the rule now: copy draft into \`.octospec/rules/$RULE_ID.md\`, add the
-      \`rules/_index.yaml\` entry, log it in \`rules/log.md\`, drop the draft.
+      \`rules/_index.yaml\` entry, drop the draft.
 EOF
   exit 0
 fi
 
-# ============================================================================
-# kind=task  -> per-actor journal entry, committed in-repo. No external memory.
-# ============================================================================
-if [ "$KIND" = "task" ]; then
-  # Resolve the actor handle: explicit --actor, else git user.name, else "unknown".
-  if [ -z "$ACTOR" ]; then
-    ACTOR="$(git config user.name 2>/dev/null || true)"
-  fi
-  [ -n "$ACTOR" ] || ACTOR="unknown"
-  ACTOR_ORIG="$ACTOR"
-  # Normalize to the by-actor convention: lowercase, [a-z0-9-], starts with a letter.
-  ACTOR="$(printf '%s' "$ACTOR" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-')"
-  # collapse repeated dashes and trim leading/trailing dashes
-  while case "$ACTOR" in *--*) true;; *) false;; esac; do ACTOR="${ACTOR//--/-}"; done
-  ACTOR="${ACTOR#-}"
-  ACTOR="${ACTOR%-}"
-  # If normalization stripped every [a-z0-9] byte (CJK / punctuation / emoji
-  # names — common on teams that use Chinese handles), ACTOR is now empty. A bare
-  # "actor-" prefix would then collapse every such author into ONE shared lane and
-  # silently last-writer-wins their journals. Derive a stable, per-name unique
-  # handle from a hash of the ORIGINAL name instead, so 李雷 and 韩梅梅 land in
-  # distinct lanes.
-  if [ -z "$ACTOR" ]; then
-    # Hash the original name. sha1sum is GNU-only (absent on a default macOS
-    # PATH); fall back to BSD/macOS `shasum -a 1`. Without this fallback the
-    # branch would yield an empty hash on macOS and collapse back into the bare
-    # "actor-" collision lane this very code path exists to prevent.
-    if command -v sha1sum >/dev/null 2>&1; then
-      actor_hash="$(printf '%s' "$ACTOR_ORIG" | sha1sum | head -c 8)"
-    else
-      actor_hash="$(printf '%s' "$ACTOR_ORIG" | shasum -a 1 | head -c 8)"
-    fi
-    [ -n "$actor_hash" ] || die "could not hash actor name (no sha1sum/shasum?)"
-    ACTOR="actor-$actor_hash"
-  fi
-  case "$ACTOR" in
-    [a-z]*) :;;
-    *) ACTOR="actor-$ACTOR";;   # ensure it starts with a letter
-  esac
-  # Re-trim in case the letter-prefix step left a trailing dash (e.g. "actor-").
-  ACTOR="${ACTOR%-}"
-  [ -n "$ACTOR" ] || die "could not derive a valid --actor handle"
-
-  if [ -z "$TAGS" ]; then TAGS="octospec-learning,$SLUG"; fi
-  TAGS_SEQ="$(csv_to_flow_seq "$TAGS")"
-  if [ -z "$TITLE" ]; then TITLE="$(titlecase_slug "$SLUG")"; fi
-  # YAML double-quoted scalar escape: backslash first, then double-quote.
-  y_title="${TITLE//\\/\\\\}"; y_title="${y_title//\"/\\\"}"
-  y_desc="${FIRST_LINE//\\/\\\\}"; y_desc="${y_desc//\"/\\\"}"
-
-  JOURNAL_PATH="$BY_ACTOR_DIR/$ACTOR/${SLUG}.md"
-
-  if [ -e "$JOURNAL_PATH" ] && [ "$SKIP_EXISTING" -eq 1 ]; then
-    echo "$PROG: journal exists, --skip-existing set; leaving $JOURNAL_PATH untouched" >&2
-    exit 0
-  fi
-
-  JOURNAL_CONTENT="$(cat <<EOF
----
-type: Journal
-title: "$y_title"
-description: "$y_desc"
-tags: $TAGS_SEQ
-timestamp: $TIMESTAMP
-# --- octospec extension fields ---
-slug: $SLUG
-actor: $ACTOR
-source: self
----
-
-# $TITLE
-
-$LEARNING
-EOF
-)"
-  atomic_write "$JOURNAL_PATH" "$JOURNAL_CONTENT
-"
-  echo "$PROG: wrote per-actor journal -> $JOURNAL_PATH" >&2
-  # Echo the repo-relative path on stdout so a caller can chain (e.g. git add).
-  printf '%s\n' ".octospec/journal/by-actor/$ACTOR/${SLUG}.md"
-  exit 0
-fi

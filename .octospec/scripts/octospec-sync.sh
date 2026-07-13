@@ -1,33 +1,32 @@
 #!/usr/bin/env bash
 # octospec-sync — vendor the pinned global ("constitution") rules into a
-# git-ignored local cache, then sync the shared agent-instruction block into
-# the agent-instruction files present in the repo.
+# git-ignored local cache, refresh the octospec-managed template surfaces, and
+# materialize the repo-root scaffolding Claude Code discovers.
 #
 # Inheritance model: vendor snapshot + version pin (NOT git submodule).
 #   - manifest.yaml declares `inherits: octo-spec@<semver>`
 #   - this script fetches that version's global/ into .octospec/_global/
 #   - _global/ is git-ignored; upgrading = bump the pin + re-run this script.
 #
-# Agent-instruction sync: one source of truth (the octo-spec checkout's
-# templates/octospec-init/AGENT-BLOCK.md) is written, idempotently and
-# atomically, between `<!-- octospec:begin -->` / `<!-- octospec:end -->`
-# markers into each agent-instruction file that exists (CLAUDE.md, AGENTS.md,
-# GEMINI.md, QWEN.md). Marker detection is whole-line and fence-aware, and a
-# malformed marker state makes the sync REFUSE that file rather than risk
-# clobbering hand-written content (see scripts/octospec_sync_block.py).
+# What sync does, in order:
+#   1) version-assert (manifest pin == GLOBAL_SRC VERSION), then vendor global/
+#      into .octospec/_global/.
+#   1b) refresh the octospec-MANAGED surfaces from the GLOBAL_SRC template
+#      (.claude/, .github/, and the fill-in _spec/_discovery/_journal templates)
+#      so an upgrade actually delivers the pinned version. User content
+#      (manifest.yaml, tasks/, journal/, rules/) is never touched.
+#   2) materialize repo-root scaffolding tools only discover at the root: copy
+#      .octospec/.claude/ -> repo-root .claude/ (install-if-missing) and prune
+#      octospec-managed root commands the template no longer ships.
 #
-# Bootstrap: CLAUDE.md and AGENTS.md are the two default entry points — whichever
-# is missing is created so BOTH Claude Code (CLAUDE.md) and Codex (AGENTS.md) get
-# the block, even when the repo started with only one of them (the common case for
-# an existing Claude Code repo that has only CLAUDE.md). GEMINI.md / QWEN.md are
-# only updated when they already exist; we never force-create those.
+# This is Claude-only: octospec is discovered via the Claude Code skill/command
+# under .claude/. sync does NOT write CLAUDE.md/AGENTS.md/GEMINI.md/QWEN.md.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 OCTOSPEC_DIR="$REPO_ROOT/.octospec"
 MANIFEST="$OCTOSPEC_DIR/manifest.yaml"
 GLOBAL_CACHE="$OCTOSPEC_DIR/_global"
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [ -f "$MANIFEST" ] || { echo "no $MANIFEST"; exit 1; }
 
@@ -82,6 +81,42 @@ mkdir -p "$GLOBAL_CACHE"
 cp -r "$GLOBAL_SRC/global/." "$GLOBAL_CACHE/"
 echo "octospec: synced global rules -> $GLOBAL_CACHE"
 
+# 1b) Refresh the octospec-MANAGED template surfaces from GLOBAL_SRC — same
+# freshness model as _global/ above. Without this, upgrading (bump the pin +
+# re-run sync) would reconcile the repo root against a STALE vendored
+# `.octospec/.claude`, so a deleted v1 command would never be pruned and a new
+# router would never be installed (the exact upgrade gate-bypass reviewers hit).
+# Only octospec-owned scaffolding is refreshed; USER content is never touched:
+# manifest.yaml (the pin), tasks/<slug>/ (real tasks), journal/<slug>.md (real
+# journals), and rules/*.md + rules/_index.yaml (the repo's own rules) are all
+# left exactly as the user has them.
+TEMPLATE_SRC="$GLOBAL_SRC/templates/octospec-init"
+if [ -d "$TEMPLATE_SRC" ]; then
+  # Whole managed subtrees (contain zero user content by design). We intentionally
+  # do NOT refresh scripts/ here: this very script runs from .octospec/scripts/,
+  # so rm-ing that dir mid-run would unlink the running file. scripts/ refresh
+  # stays a documented manual step (re-copy the template on upgrade); the sync
+  # regression test's drift guard keeps the copies honest.
+  for sub in .claude .github; do
+    if [ -d "$TEMPLATE_SRC/$sub" ]; then
+      rm -rf "$OCTOSPEC_DIR/$sub"
+      cp -r "$TEMPLATE_SRC/$sub" "$OCTOSPEC_DIR/$sub"
+    fi
+  done
+  # Individual fill-in templates (never the user's real tasks/journals/rules).
+  for f in tasks/_spec.template.md tasks/_discovery.template.md \
+           journal/_journal.template.md; do
+    if [ -f "$TEMPLATE_SRC/$f" ]; then
+      mkdir -p "$OCTOSPEC_DIR/$(dirname "$f")"
+      rm -f "$OCTOSPEC_DIR/$f"
+      cp "$TEMPLATE_SRC/$f" "$OCTOSPEC_DIR/$f"
+    fi
+  done
+  echo "octospec: refreshed managed template surfaces from $TEMPLATE_SRC"
+else
+  echo "octospec: WARNING no template at $TEMPLATE_SRC; skipping managed refresh" >&2
+fi
+
 # Ensure _global/ is git-ignored (with a trailing-newline guard so we never glue
 # onto a previous line that lacks a newline).
 GITIGNORE="$OCTOSPEC_DIR/.gitignore"
@@ -92,73 +127,48 @@ if ! grep -qxF "_global/" "$GITIGNORE" 2>/dev/null; then
   printf '_global/\n' >> "$GITIGNORE"
 fi
 
-# 2) Sync the shared agent-instruction block into the instruction files present.
-BLOCK_SRC="$GLOBAL_SRC/templates/octospec-init/AGENT-BLOCK.md"
-SYNC_PY="$HERE/octospec_sync_block.py"
-if [ ! -f "$BLOCK_SRC" ]; then
-  echo "octospec: WARNING no AGENT-BLOCK.md at $BLOCK_SRC; skipping instruction sync" >&2
-elif [ ! -f "$SYNC_PY" ]; then
-  echo "octospec: WARNING no octospec_sync_block.py at $SYNC_PY; skipping instruction sync" >&2
-else
-  # Two default entry points (CLAUDE.md for Claude Code, AGENTS.md for Codex)
-  # are created if missing; the rest are only synced when already present.
-  DEFAULTS="CLAUDE.md AGENTS.md"
-  OPTIONAL="GEMINI.md QWEN.md"
-  rc=0
-  # Per-file isolation: one refused/failed file must not abort the rest, but it
-  # MUST be reflected in the final exit code.
-  for t in $DEFAULTS; do
-    if [ -f "$REPO_ROOT/$t" ]; then
-      if res="$(python3 "$SYNC_PY" "$REPO_ROOT/$t" "$BLOCK_SRC" 2>&1)"; then
-        echo "octospec: $t -> $res"
-      else
-        echo "octospec: $t -> FAILED: $res" >&2
-        rc=1
-      fi
-    else
-      echo "octospec: $t missing; bootstrapping"
-      if res="$(python3 "$SYNC_PY" "$REPO_ROOT/$t" "$BLOCK_SRC" --create 2>&1)"; then
-        echo "octospec: $t -> $res"
-      else
-        echo "octospec: $t -> FAILED: $res" >&2
-        rc=1
-      fi
-    fi
-  done
-  for t in $OPTIONAL; do
-    [ -f "$REPO_ROOT/$t" ] || continue
-    if res="$(python3 "$SYNC_PY" "$REPO_ROOT/$t" "$BLOCK_SRC" 2>&1)"; then
-      echo "octospec: $t -> $res"
-    else
-      echo "octospec: $t -> FAILED: $res" >&2
-      rc=1
-    fi
-  done
-  if [ "$rc" -ne 0 ]; then
-    echo "octospec: one or more agent files failed to sync" >&2
-    exit "$rc"
-  fi
-fi
-
-# 3) Materialize repo-root scaffolding that tools only discover at the root.
+# 2) Materialize repo-root scaffolding that tools only discover at the root.
 # The template tree carries .octospec/.claude/ (slash commands + skills) and
 # .octospec/.github/PULL_REQUEST_TEMPLATE.md, but Claude Code only discovers
 # slash commands/skills under the REPO ROOT .claude/, and GitHub only applies a
 # PR template at the REPO ROOT .github/. So copy these out of .octospec/ to the
-# root — install-if-missing only: an existing destination file is left untouched
-# so hand-written customizations are never clobbered. This makes the whole step
-# idempotent (a second run reports everything already present).
+# root with TWO policies:
+#   - octospec-OWNED files (commands/octospec*.md, skills/octospec-*/**, and the
+#     PR template) are REFRESHED FROM SOURCE (overwritten) every run, so an
+#     upgrade actually delivers the pinned version. These have stable paths, so
+#     copy-if-absent would leave them frozen at the first-installed version — the
+#     exact stale-root-skill gate-bypass reviewers hit.
+#   - any OTHER file under .claude/ (a user's own command/skill) is
+#     install-if-missing: an existing destination is left untouched so
+#     hand-written customizations are never clobbered.
+# Either way the step is idempotent.
 #
-# install_missing SRC_DIR DEST_DIR LABEL — copy every file under SRC_DIR into
-# DEST_DIR (mirroring subpaths), skipping any destination file that exists.
-install_missing() {
+# is_octospec_owned REL — true if the repo-relative .claude path is a file
+# octospec manages (and may therefore overwrite on refresh).
+is_octospec_owned() {
+  case "$1" in
+    commands/octospec*.md) return 0;;
+    skills/octospec-*/*)   return 0;;
+    *) return 1;;
+  esac
+}
+
+# install_or_refresh SRC_DIR DEST_DIR LABEL — copy every file under SRC_DIR into
+# DEST_DIR (mirroring subpaths). octospec-owned files overwrite; others are
+# install-if-missing.
+install_or_refresh() {
   src_dir="$1"; dest_dir="$2"; label="$3"
   [ -d "$src_dir" ] || return 0
-  installed=0; skipped=0
+  installed=0; refreshed=0; skipped=0
   while IFS= read -r src; do
+    [ -n "$src" ] || continue
     rel="${src#"$src_dir"/}"
     dest="$dest_dir/$rel"
-    if [ -e "$dest" ]; then
+    if is_octospec_owned "$rel"; then
+      mkdir -p "$(dirname "$dest")"
+      cp "$src" "$dest"
+      refreshed=$((refreshed + 1))
+    elif [ -e "$dest" ]; then
       skipped=$((skipped + 1))
     else
       mkdir -p "$(dirname "$dest")"
@@ -168,21 +178,50 @@ install_missing() {
   done <<EOF
 $(find "$src_dir" -type f)
 EOF
-  echo "octospec: $label -> installed $installed, kept $skipped existing"
+  echo "octospec: $label -> refreshed $refreshed, installed $installed, kept $skipped existing"
 }
 
-install_missing "$OCTOSPEC_DIR/.claude" "$REPO_ROOT/.claude" ".claude (slash commands + skills)"
+install_or_refresh "$OCTOSPEC_DIR/.claude" "$REPO_ROOT/.claude" ".claude (slash commands + skills)"
+
+# 2b) Prune octospec-managed command files that no longer exist in the template.
+# install_missing is copy-if-absent, so a command REMOVED from the template (e.g.
+# the v1 octospec-{plan,go,check,finish} consolidated into one octospec.md) would
+# otherwise linger at the repo root forever and keep offering a pre-gate flow that
+# bypasses the approval gate. We reconcile-to-source, but ONLY within octospec's
+# own namespace: files matching `octospec*.md` under .claude/commands/. A file the
+# template still ships (octospec.md) is kept; a user's own non-octospec command is
+# never touched. This is deletion, so it is deliberately scoped and namespaced.
+prune_obsolete_commands() {
+  src_cmd_dir="$OCTOSPEC_DIR/.claude/commands"
+  dest_cmd_dir="$REPO_ROOT/.claude/commands"
+  [ -d "$dest_cmd_dir" ] || return 0
+  pruned=0
+  while IFS= read -r dest; do
+    [ -n "$dest" ] || continue
+    base="$(basename "$dest")"
+    # Only ever consider octospec-managed command files.
+    case "$base" in octospec*.md) :;; *) continue;; esac
+    if [ ! -e "$src_cmd_dir/$base" ]; then
+      rm -f "$dest"
+      pruned=$((pruned + 1))
+      echo "octospec: pruned obsolete command $base"
+    fi
+  done <<EOF
+$(find "$dest_cmd_dir" -maxdepth 1 -type f -name 'octospec*.md' 2>/dev/null)
+EOF
+  echo "octospec: command prune -> removed $pruned obsolete"
+}
+prune_obsolete_commands
 
 PRT_SRC="$OCTOSPEC_DIR/.github/PULL_REQUEST_TEMPLATE.md"
 PRT_DEST="$REPO_ROOT/.github/PULL_REQUEST_TEMPLATE.md"
 if [ -f "$PRT_SRC" ]; then
-  if [ -e "$PRT_DEST" ]; then
-    echo "octospec: .github/PULL_REQUEST_TEMPLATE.md -> kept existing"
-  else
-    mkdir -p "$REPO_ROOT/.github"
-    cp "$PRT_SRC" "$PRT_DEST"
-    echo "octospec: .github/PULL_REQUEST_TEMPLATE.md -> installed"
-  fi
+  # The PR template is octospec-managed: refresh it from source every run so an
+  # upgrade delivers the current template (it has a stable path, so copy-if-absent
+  # would freeze it at the first-installed version).
+  mkdir -p "$REPO_ROOT/.github"
+  cp "$PRT_SRC" "$PRT_DEST"
+  echo "octospec: .github/PULL_REQUEST_TEMPLATE.md -> refreshed from source"
 fi
 
 echo "octospec: done."

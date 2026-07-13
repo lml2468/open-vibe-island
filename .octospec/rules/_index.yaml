@@ -6,9 +6,11 @@
 #   - id must be globally unique (including inherited global rules).
 #   - a repo-tier rule with the same id overrides the global one.
 #   - inject_when = paths glob OR touches tag (union); a rule is injected once.
-#   - when the injection budget is exceeded, keep load_bearing first, then by
-#     priority (desc); truncated low-priority rules inject only their summary line.
+#   - read the full text of every matching rule and follow it; load-bearing first.
 
+# `rules:` is an empty block sequence — add entries as block items under it (do
+# NOT write `rules: []`; appending a block item under a flow-style empty list is
+# invalid YAML).
 rules:
   - id: view-file-decomposition
     priority: 70

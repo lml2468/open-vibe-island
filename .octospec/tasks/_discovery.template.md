@@ -11,8 +11,8 @@ source: self
 
 # Discovery: <slug>
 
-> The **Discover** phase output. Read-only exploration done BEFORE the brief, so
-> the brief's Load-bearing list is grounded in what the code actually does rather
+> The **Discover** phase output. Read-only exploration done BEFORE the spec, so
+> the spec's Load-bearing list is grounded in what the code actually does rather
 > than a guess. No code is written in this phase.
 
 ## Relevant files
@@ -25,7 +25,7 @@ source: self
 
 ## Contracts & blast radius
 <!-- What depends on the code above? APIs, callers, data stores, isolation
-     boundaries. This becomes the brief's Load-bearing list. -->
+     boundaries. This becomes the spec's Load-bearing list. -->
 - 
 
 ## Risks & unknowns
