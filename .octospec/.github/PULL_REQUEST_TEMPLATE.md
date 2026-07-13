@@ -1,23 +1,47 @@
-## Summary
-<!-- What this PR does, in plain language. -->
+## 变更概述
+简要描述本次变更做了什么、为什么这样做。
 
-## Linked Spec
-<!-- Link to .octospec/tasks/<slug>/brief.md (note the approved revision, e.g.
-     brief.md r2) or the issue this implements. Required when the change touches
-     load-bearing behavior. The brief's current revision must be human-approved. -->
+## 关联 Issue
+Fixes #123 或 Refs #456
 
-## How verified
-<!-- Tests run, manual steps, evidence. -->
+## 关联 Spec
+Spec：.octospec/tasks/<xxx_slug>/spec.md
+<!-- 注明已批准的 revision(如 spec.md r2)。触及 load-bearing 行为时必填;
+     spec 的当前 revision 必须已经过人工审批。 -->
+
+## 变更类型
+- [ ] Bug 修复
+- [ ] 新功能
+- [ ] 重构（无功能变更）
+- [ ] 性能优化
+- [ ] 文档更新
+
+## 测试计划
+- [ ] 单元测试已添加/更新
+- [ ] 手动测试步骤：
+  1. ...
+  2. ...
+
+## 截图/录屏（如涉及 UI 变更）
+（粘贴截图）
+
+## 风险评估
+- [ ] 低风险（局部变更，影响范围小）
+- [ ] 中风险（涉及公共模块，需要关注）
+- [ ] 高风险（涉及核心逻辑、数据迁移、权限变更）
+
+## 审查重点
+（标注希望审查者特别关注的部分）
 
 ## COMPREHENSION
-<!-- Required for load-bearing / architectural / P0 changes. Answer to substance,
-     not boilerplate. Delete this section for trivial changes (typo/docs/lint/config). -->
+<!-- load-bearing / 架构 / P0 变更必填,答到实处,勿套话。
+     纯琐碎变更(typo/docs/lint/config)可删除本节。 -->
 
-1. **What does this change actually do** to the load-bearing path?
+1. **这次变更对 load-bearing 路径实际做了什么？**
    
 
-2. **What could break** because of it (dependents + failure mode)?
+2. **它可能破坏什么**（依赖方 + 失败模式）？
    
 
-3. **How do you know it works** (specific test/repro/trace)?
+3. **你如何确认它有效**（具体的测试/复现/追踪）？
    
